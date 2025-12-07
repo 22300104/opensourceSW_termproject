@@ -4,6 +4,7 @@ import numpy as np
 import os
 import sys
 from PIL import Image, ImageDraw, ImageFont
+from datetime import datetime
 
 # --- [1. 설정 및 초기화] ---
 mp_face_mesh = mp.solutions.face_mesh
@@ -364,14 +365,35 @@ def apply_filter(image, face_landmarks, filter_type, h, w):
     
     return image
 
-# --- [7. 메인 실행 루프] ---
+# --- [7. 스크린샷 저장 함수] ---
+def save_screenshot(image, filter_name='none'):
+    """현재 화면을 이미지 파일로 저장"""
+    try:
+        # 저장 폴더 설정
+        save_dir = 'screenshots'
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+        
+        # 파일명 생성 (타임스탬프 + 필터명)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{save_dir}/screenshot_{filter_name}_{timestamp}.jpg"
+        
+        # 이미지 저장
+        cv2.imwrite(filename, image)
+        return filename
+    except Exception as e:
+        return None
+
+# --- [8. 메인 실행 루프] ---
 cap = cv2.VideoCapture(0)
 
+# 화면 메시지 관리
+status_message = ""
+message_timer = 0
+MESSAGE_DISPLAY_TIME = 60  # 프레임 수 (약 1초, 60fps 기준)
+
 print("\n=== AR Face Filter Started ===")
-print("🎭 필터 전환: 숫자 키를 누르세요")
-print("   [1] 안경  [2] 모자  [3] 수염  [4] 왕관  [0] 없음")
-print("📸 기능: 입을 크게 벌리면 'Wow!' 효과")
-print("❌ 종료: 'q' 키를 누르세요\n")
+print("프로그램이 시작되었습니다.\n")
 
 while cap.isOpened():
     success, image = cap.read()
@@ -414,8 +436,14 @@ while cap.isOpened():
     # --- [화면에 현재 필터 표시] ---
     filter_text = f"현재 필터: {filter_names[current_filter]}"
     image = put_korean_text(image, filter_text, (10, 10), font_size=24, color=(0, 255, 0))
-    image = put_korean_text(image, "[1]안경 [2]모자 [3]수염 [4]왕관 [0]없음", (10, h - 30), 
+    image = put_korean_text(image, "[1]안경 [2]모자 [3]수염 [4]왕관 [0]없음 [s]스크린샷 [q]종료", (10, h - 30), 
                            font_size=18, color=(255, 255, 255))
+    
+    # --- [상태 메시지 표시] ---
+    if status_message and message_timer > 0:
+        # 메시지 표시 (텍스트만)
+        image = put_korean_text(image, status_message, (10, h - 60), font_size=20, color=(0, 255, 0))
+        message_timer -= 1
 
     # 화면 출력
     cv2.imshow('AR Filter Project - Sejoong', image)
@@ -424,21 +452,35 @@ while cap.isOpened():
     key = cv2.waitKey(5) & 0xFF
     if key == ord('q'):
         break
+    elif key == ord('s') or key == ord('S'):
+        # 스크린샷 저장
+        saved_path = save_screenshot(image, current_filter)
+        if saved_path:
+            status_message = f"📸 스크린샷 저장 완료!"
+            message_timer = MESSAGE_DISPLAY_TIME
+        else:
+            status_message = "❌ 스크린샷 저장 실패"
+            message_timer = MESSAGE_DISPLAY_TIME
     elif key == ord('1'):
         current_filter = 'glasses'
-        print(f"✅ 필터 변경: {filter_names[current_filter]}")
+        status_message = f"✅ 필터 변경: {filter_names[current_filter]}"
+        message_timer = MESSAGE_DISPLAY_TIME
     elif key == ord('2'):
         current_filter = 'hat'
-        print(f"✅ 필터 변경: {filter_names[current_filter]}")
+        status_message = f"✅ 필터 변경: {filter_names[current_filter]}"
+        message_timer = MESSAGE_DISPLAY_TIME
     elif key == ord('3'):
         current_filter = 'mustache'
-        print(f"✅ 필터 변경: {filter_names[current_filter]}")
+        status_message = f"✅ 필터 변경: {filter_names[current_filter]}"
+        message_timer = MESSAGE_DISPLAY_TIME
     elif key == ord('4'):
         current_filter = 'crown'
-        print(f"✅ 필터 변경: {filter_names[current_filter]}")
+        status_message = f"✅ 필터 변경: {filter_names[current_filter]}"
+        message_timer = MESSAGE_DISPLAY_TIME
     elif key == ord('0'):
         current_filter = 'none'
-        print(f"✅ 필터 변경: {filter_names[current_filter]}")
+        status_message = f"✅ 필터 변경: {filter_names[current_filter]}"
+        message_timer = MESSAGE_DISPLAY_TIME
 
 cap.release()
 cv2.destroyAllWindows()
