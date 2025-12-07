@@ -3,6 +3,7 @@ import mediapipe as mp
 import numpy as np
 import os
 import sys
+from PIL import Image, ImageDraw, ImageFont
 
 # --- [1. 설정 및 초기화] ---
 mp_face_mesh = mp.solutions.face_mesh
@@ -113,31 +114,126 @@ def overlay_transparent(background, overlay, x, y):
         # 에러 발생 시 그냥 원본 반환 (프로그램 꺼짐 방지)
         return background
 
-# --- [4. 이미지 파일 로드 (경로 문제 해결)] ---
-file_name = 'glasses.png'
-current_dir = os.getcwd()
-possible_paths = [
-    file_name,
-    os.path.join('Sejung', file_name),
-    os.path.join('..', file_name)
-]
+# --- [4. 이미지 파일 로드 함수] ---
+def load_filter_image(filename, default_width=300, default_height=100, create_func=None):
+    """필터 이미지를 로드하는 함수"""
+    current_dir = os.getcwd()
+    possible_paths = [
+        filename,
+        os.path.join('Sejung', filename),
+        os.path.join('..', filename)
+    ]
+    
+    img = None
+    for path in possible_paths:
+        if os.path.exists(path):
+            img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+            if img is not None:
+                print(f"✅ 이미지 로드 성공! 경로: {path}")
+                break
+    
+    if img is None:
+        if create_func:
+            print(f"⚠️ '{filename}' 파일을 찾을 수 없어 코드로 생성된 필터를 사용합니다.")
+            img = create_func(default_width, default_height)
+        else:
+            print(f"⚠️ '{filename}' 파일을 찾을 수 없습니다.")
+            return None
+    elif img.shape[2] < 4:
+        print(f"⚠️ 경고: '{filename}'에 투명도(Alpha) 채널이 없습니다! 알파 채널을 추가합니다.")
+        # 알파 채널 추가
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2BGRA)
+    
+    return img
 
-glasses_img = None
-for path in possible_paths:
-    if os.path.exists(path):
-        glasses_img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
-        print(f"✅ 이미지 로드 성공! 경로: {path}")
-        break
+# 모든 필터 이미지 로드
+print("\n=== 필터 이미지 로드 중 ===")
+glasses_img = load_filter_image('glasses.png', 300, 100, create_glasses_filter)
+hat_img = load_filter_image('hat.png', 300, 180, create_hat_filter)
+mustache_img = load_filter_image('mustache.png', 300, 150, create_mustache_filter)
+crown_img = load_filter_image('crown.png', 300, 240, create_crown_filter)
+print("=" * 30 + "\n")
 
-if glasses_img is None:
-    print(f"⚠️ '{file_name}' 파일을 찾을 수 없어 코드로 생성된 필터를 사용합니다.")
-    glasses_img = create_glasses_filter(300, 100)
-elif glasses_img.shape[2] < 4:
-    print("⚠️ 경고: 이미지에 투명도(Alpha) 채널이 없습니다! 합성이 이상할 수 있습니다.")
-    # 알파 채널 추가
-    glasses_img = cv2.cvtColor(glasses_img, cv2.COLOR_BGR2BGRA)
+# --- [5. 한글 텍스트 출력 함수] ---
+def put_korean_text(img, text, position, font_size=30, color=(0, 255, 0)):
+    """한글 텍스트를 이미지에 출력하는 함수"""
+    try:
+        # PIL로 변환
+        img_pil = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+        draw = ImageDraw.Draw(img_pil)
+        
+        # 폰트 로드 시도 (여러 경로 시도)
+        font = None
+        font_paths = [
+            "C:/Windows/Fonts/malgun.ttf",      # 맑은 고딕
+            "C:/Windows/Fonts/gulim.ttc",        # 굴림
+            "C:/Windows/Fonts/batang.ttc",       # 바탕
+            "malgun.ttf",
+            "gulim.ttc",
+        ]
+        
+        for font_path in font_paths:
+            try:
+                if os.path.exists(font_path):
+                    font = ImageFont.truetype(font_path, font_size)
+                    break
+            except:
+                continue
+        
+        if font is None:
+            try:
+                font = ImageFont.load_default()
+            except:
+                pass
+        
+        # 텍스트 그리기
+        if font:
+            draw.text(position, text, font=font, fill=color)
+        else:
+            draw.text(position, text, fill=color)
+        
+        # OpenCV 형식으로 다시 변환
+        img = cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
+    except Exception as e:
+        # 에러 발생 시 영문으로 대체
+        try:
+            cv2.putText(img, text.encode('ascii', 'ignore').decode('ascii'), position, 
+                       cv2.FONT_HERSHEY_SIMPLEX, font_size/30, color, 2)
+        except:
+            pass
+    return img
 
-# --- [5. 필터 관리 시스템] ---
+# --- [6. 필터 위치 조정 파라미터 (여기서 수정하세요!)] ---
+# 각 필터의 크기 비율과 위치 오프셋을 조정할 수 있습니다
+# 프로그램 실행 후 필터 위치가 맞지 않으면 이 값들을 조정하세요!
+FILTER_SETTINGS = {
+    'glasses': {
+        'size_ratio': 2.3,      # 눈 사이 거리의 몇 배로 할지 (크기 조절)
+        'height_ratio': 0.4,     # 너비 대비 높이 비율 (실제 이미지 사용 시 무시됨)
+        'offset_x': 0,          # X축 오프셋 (양수: 오른쪽, 음수: 왼쪽)
+        'offset_y': 0,          # Y축 오프셋 (양수: 아래로, 음수: 위로)
+    },
+    'hat': {
+        'size_ratio': 2.5,      # 크기 조절 (값을 크게 하면 모자가 커짐)
+        'height_ratio': 0.6,     # 높이 비율
+        'offset_x': 0,          # 좌우 이동 (양수: 오른쪽, 음수: 왼쪽)
+        'offset_y': 60,         # 상하 이동 (양수: 아래로, 음수: 위로) - 모자는 낮게 (가장 큰 움직임)
+    },
+    'mustache': {
+        'size_ratio': 1.8,      # 크기 조절
+        'height_ratio': 0.5,     # 높이 비율
+        'offset_x': 0,          # 좌우 이동
+        'offset_y': -25,        # 상하 이동 (양수: 아래, 음수: 위로) - 수염은 높게 (중간 움직임)
+    },
+    'crown': {
+        'size_ratio': 2.2,      # 크기 조절
+        'height_ratio': 0.8,     # 높이 비율
+        'offset_x': 0,          # 좌우 이동
+        'offset_y': 15,         # 상하 이동 (양수: 아래로, 음수: 위로) - 왕관은 낮게 (가장 작은 움직임)
+    }
+}
+
+# --- [7. 필터 관리 시스템] ---
 current_filter = 'glasses'  # 기본 필터
 filter_names = {
     'glasses': '안경',
@@ -165,39 +261,56 @@ def apply_filter(image, face_landmarks, filter_type, h, w):
     angle = np.degrees(np.arctan2(dy, dx))
     eye_dist = np.sqrt(dx**2 + dy**2)
     
+    # 설정 가져오기
+    settings = FILTER_SETTINGS.get(filter_type, {})
+    size_ratio = settings.get('size_ratio', 2.0)
+    height_ratio = settings.get('height_ratio', 0.5)
+    offset_x = settings.get('offset_x', 0)
+    offset_y = settings.get('offset_y', 0)
+    
     if filter_type == 'glasses':
         # 안경 필터
-        glass_width = int(eye_dist * 2.3)
+        glass_width = int(eye_dist * size_ratio)
         if glass_width > 0:
-            glass_height = int(glass_width * 0.4)
-            filter_img = create_glasses_filter(glass_width, glass_height) if glasses_img is None else glasses_img.copy()
-            
-            if filter_img.shape[1] != glass_width:
-                scale_factor = glass_width / filter_img.shape[1]
-                glass_height = int(filter_img.shape[0] * scale_factor)
-                filter_img = cv2.resize(filter_img, (glass_width, glass_height))
+            if glasses_img is not None:
+                # 실제 이미지 사용
+                scale_factor = glass_width / glasses_img.shape[1]
+                glass_height = int(glasses_img.shape[0] * scale_factor)
+                filter_img = cv2.resize(glasses_img.copy(), (glass_width, glass_height))
+            else:
+                # 코드로 생성
+                glass_height = int(glass_width * height_ratio)
+                filter_img = create_glasses_filter(glass_width, glass_height)
             
             # 회전
             M = cv2.getRotationMatrix2D((glass_width//2, glass_height//2), -angle, 1)
             rotated_filter = cv2.warpAffine(filter_img, M, (glass_width, glass_height))
             
-            center_x = (lx + rx) // 2 - glass_width // 2
-            center_y = (ly + ry) // 2 - glass_height // 2
+            center_x = (lx + rx) // 2 - glass_width // 2 + offset_x
+            center_y = (ly + ry) // 2 - glass_height // 2 + offset_y
             image = overlay_transparent(image, rotated_filter, center_x, center_y)
     
     elif filter_type == 'hat':
         # 모자 필터 (이마 위)
         forehead = face_landmarks.landmark[10]
         fx, fy = int(forehead.x * w), int(forehead.y * h)
-        hat_width = int(eye_dist * 2.5)
-        hat_height = int(hat_width * 0.6)
+        hat_width = int(eye_dist * size_ratio)
         
-        filter_img = create_hat_filter(hat_width, hat_height)
+        if hat_img is not None:
+            # 실제 이미지 사용
+            scale_factor = hat_width / hat_img.shape[1]
+            hat_height = int(hat_img.shape[0] * scale_factor)
+            filter_img = cv2.resize(hat_img.copy(), (hat_width, hat_height))
+        else:
+            # 코드로 생성
+            hat_height = int(hat_width * height_ratio)
+            filter_img = create_hat_filter(hat_width, hat_height)
+        
         M = cv2.getRotationMatrix2D((hat_width//2, hat_height//2), -angle, 1)
         rotated_filter = cv2.warpAffine(filter_img, M, (hat_width, hat_height))
         
-        center_x = fx - hat_width // 2
-        center_y = fy - hat_height - 20
+        center_x = fx - hat_width // 2 + offset_x
+        center_y = fy - hat_height + offset_y
         image = overlay_transparent(image, rotated_filter, center_x, center_y)
     
     elif filter_type == 'mustache':
@@ -207,30 +320,46 @@ def apply_filter(image, face_landmarks, filter_type, h, w):
         nx, ny = int(nose_tip.x * w), int(nose_tip.y * h)
         ux, uy = int(upper_lip.x * w), int(upper_lip.y * h)
         
-        mustache_width = int(eye_dist * 1.8)
-        mustache_height = int(mustache_width * 0.5)
+        mustache_width = int(eye_dist * size_ratio)
         
-        filter_img = create_mustache_filter(mustache_width, mustache_height)
+        if mustache_img is not None:
+            # 실제 이미지 사용
+            scale_factor = mustache_width / mustache_img.shape[1]
+            mustache_height = int(mustache_img.shape[0] * scale_factor)
+            filter_img = cv2.resize(mustache_img.copy(), (mustache_width, mustache_height))
+        else:
+            # 코드로 생성
+            mustache_height = int(mustache_width * height_ratio)
+            filter_img = create_mustache_filter(mustache_width, mustache_height)
+        
         M = cv2.getRotationMatrix2D((mustache_width//2, mustache_height//2), -angle, 1)
         rotated_filter = cv2.warpAffine(filter_img, M, (mustache_width, mustache_height))
         
-        center_x = (nx + ux) // 2 - mustache_width // 2
-        center_y = (ny + uy) // 2
+        center_x = (nx + ux) // 2 - mustache_width // 2 + offset_x
+        center_y = (ny + uy) // 2 + offset_y
         image = overlay_transparent(image, rotated_filter, center_x, center_y)
     
     elif filter_type == 'crown':
         # 왕관 필터 (머리 위)
         forehead = face_landmarks.landmark[10]
         fx, fy = int(forehead.x * w), int(forehead.y * h)
-        crown_width = int(eye_dist * 2.2)
-        crown_height = int(crown_width * 0.8)
+        crown_width = int(eye_dist * size_ratio)
         
-        filter_img = create_crown_filter(crown_width, crown_height)
+        if crown_img is not None:
+            # 실제 이미지 사용
+            scale_factor = crown_width / crown_img.shape[1]
+            crown_height = int(crown_img.shape[0] * scale_factor)
+            filter_img = cv2.resize(crown_img.copy(), (crown_width, crown_height))
+        else:
+            # 코드로 생성
+            crown_height = int(crown_width * height_ratio)
+            filter_img = create_crown_filter(crown_width, crown_height)
+        
         M = cv2.getRotationMatrix2D((crown_width//2, crown_height//2), -angle, 1)
         rotated_filter = cv2.warpAffine(filter_img, M, (crown_width, crown_height))
         
-        center_x = fx - crown_width // 2
-        center_y = fy - crown_height - 30
+        center_x = fx - crown_width // 2 + offset_x
+        center_y = fy - crown_height + offset_y
         image = overlay_transparent(image, rotated_filter, center_x, center_y)
     
     return image
@@ -284,9 +413,9 @@ while cap.isOpened():
     
     # --- [화면에 현재 필터 표시] ---
     filter_text = f"현재 필터: {filter_names[current_filter]}"
-    cv2.putText(image, filter_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-    cv2.putText(image, "[1]안경 [2]모자 [3]수염 [4]왕관 [0]없음", (10, h - 20), 
-                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+    image = put_korean_text(image, filter_text, (10, 10), font_size=24, color=(0, 255, 0))
+    image = put_korean_text(image, "[1]안경 [2]모자 [3]수염 [4]왕관 [0]없음", (10, h - 30), 
+                           font_size=18, color=(255, 255, 255))
 
     # 화면 출력
     cv2.imshow('AR Filter Project - Sejoong', image)
