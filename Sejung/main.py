@@ -235,7 +235,8 @@ FILTER_SETTINGS = {
 }
 
 # --- [7. 필터 관리 시스템] ---
-current_filter = 'glasses'  # 기본 필터
+# 여러 필터를 동시에 적용할 수 있도록 리스트로 관리
+active_filters = ['glasses']  # 기본 활성 필터 목록
 filter_names = {
     'glasses': '안경',
     'hat': '모자',
@@ -365,6 +366,15 @@ def apply_filter(image, face_landmarks, filter_type, h, w):
     
     return image
 
+# --- [6-1. 다중 필터 적용 함수] ---
+def apply_filters(image, face_landmarks, filters, h, w):
+    """여러 필터를 순차적으로 적용"""
+    if not filters:
+        return image
+    for f in filters:
+        image = apply_filter(image, face_landmarks, f, h, w)
+    return image
+
 # --- [7. 스크린샷 저장 함수] ---
 def save_screenshot(image, filter_name='none'):
     """현재 화면을 이미지 파일로 저장"""
@@ -410,12 +420,13 @@ while cap.isOpened():
     image.flags.writeable = True
     image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
 
+    # 현재 프레임 크기 (얼굴 감지 유무와 관계없이 사용)
+    h, w, c = image.shape
+
     if results.multi_face_landmarks:
         for face_landmarks in results.multi_face_landmarks:
-            h, w, c = image.shape
-            
             # --- [필터 적용] ---
-            image = apply_filter(image, face_landmarks, current_filter, h, w)
+            image = apply_filters(image, face_landmarks, active_filters, h, w)
             
             # --- [입 벌림 감지] ---
             top_lip = face_landmarks.landmark[13]
@@ -434,10 +445,19 @@ while cap.isOpened():
                 cv2.rectangle(image, (lx-50, face_top-50), (rx+50, face_bot+50), (0, 255, 255), 3)
     
     # --- [화면에 현재 필터 표시] ---
-    filter_text = f"현재 필터: {filter_names[current_filter]}"
+    if active_filters:
+        active_names = [filter_names.get(f, f) for f in active_filters]
+        filter_text = f"현재 필터: {', '.join(active_names)}"
+    else:
+        filter_text = "현재 필터: 없음"
     image = put_korean_text(image, filter_text, (10, 10), font_size=24, color=(0, 255, 0))
-    image = put_korean_text(image, "[1]안경 [2]모자 [3]수염 [4]왕관 [0]없음 [s]스크린샷 [q]종료", (10, h - 30), 
-                           font_size=18, color=(255, 255, 255))
+    image = put_korean_text(
+        image,
+        "[1]안경 [2]모자 [3]수염 [4]왕관 [0]모두해제 [s]스크린샷 [q]종료",
+        (10, h - 30),
+        font_size=18,
+        color=(255, 255, 255),
+    )
     
     # --- [상태 메시지 표시] ---
     if status_message and message_timer > 0:
@@ -454,32 +474,45 @@ while cap.isOpened():
         break
     elif key == ord('s') or key == ord('S'):
         # 스크린샷 저장
-        saved_path = save_screenshot(image, current_filter)
+        filter_label = "none" if not active_filters else "_".join(active_filters)
+        saved_path = save_screenshot(image, filter_label)
         if saved_path:
-            status_message = f"📸 스크린샷 저장 완료!"
+            status_message = "📸 스크린샷 저장 완료!"
             message_timer = MESSAGE_DISPLAY_TIME
         else:
             status_message = "❌ 스크린샷 저장 실패"
             message_timer = MESSAGE_DISPLAY_TIME
     elif key == ord('1'):
-        current_filter = 'glasses'
-        status_message = f"✅ 필터 변경: {filter_names[current_filter]}"
+        if 'glasses' in active_filters:
+            active_filters.remove('glasses')
+        else:
+            active_filters.append('glasses')
+        status_message = "✅ 필터 토글: 안경"
         message_timer = MESSAGE_DISPLAY_TIME
     elif key == ord('2'):
-        current_filter = 'hat'
-        status_message = f"✅ 필터 변경: {filter_names[current_filter]}"
+        if 'hat' in active_filters:
+            active_filters.remove('hat')
+        else:
+            active_filters.append('hat')
+        status_message = "✅ 필터 토글: 모자"
         message_timer = MESSAGE_DISPLAY_TIME
     elif key == ord('3'):
-        current_filter = 'mustache'
-        status_message = f"✅ 필터 변경: {filter_names[current_filter]}"
+        if 'mustache' in active_filters:
+            active_filters.remove('mustache')
+        else:
+            active_filters.append('mustache')
+        status_message = "✅ 필터 토글: 수염"
         message_timer = MESSAGE_DISPLAY_TIME
     elif key == ord('4'):
-        current_filter = 'crown'
-        status_message = f"✅ 필터 변경: {filter_names[current_filter]}"
+        if 'crown' in active_filters:
+            active_filters.remove('crown')
+        else:
+            active_filters.append('crown')
+        status_message = "✅ 필터 토글: 왕관"
         message_timer = MESSAGE_DISPLAY_TIME
     elif key == ord('0'):
-        current_filter = 'none'
-        status_message = f"✅ 필터 변경: {filter_names[current_filter]}"
+        active_filters = []
+        status_message = "✅ 필터 모두 해제"
         message_timer = MESSAGE_DISPLAY_TIME
 
 cap.release()
