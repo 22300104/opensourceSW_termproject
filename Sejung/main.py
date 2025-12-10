@@ -247,6 +247,11 @@ SCREENSHOT_DIR = "screenshots"        # 저장 폴더
 SCREENSHOT_FMT = "jpg"                # jpg 또는 png
 SCREENSHOT_QUALITY = 95               # jpg 품질 (1~100), png일 때는 무시
 
+# --- [6-3. 녹화 설정] ---
+RECORD_DIR = "videos"
+RECORD_CODEC = "mp4v"    # mp4v, XVID 등
+RECORD_FPS_FALLBACK = 30
+
 # --- [7. 필터 관리 시스템] ---
 # 여러 필터를 동시에 적용할 수 있도록 리스트로 관리
 active_filters = ['glasses']  # 기본 활성 필터 목록
@@ -428,10 +433,19 @@ def save_screenshot(image, filter_name='none'):
 # --- [8. 메인 실행 루프] ---
 cap = cv2.VideoCapture(0)
 
+# 창 크기 조절 가능하도록 설정
+cv2.namedWindow('AR Filter Project - Sejoong', cv2.WINDOW_NORMAL)
+# 기본 시작 크기 (필요 시 조정)
+cv2.resizeWindow('AR Filter Project - Sejoong', 1280, 720)
+
 # 화면 메시지 관리
 status_message = ""
 message_timer = 0
 MESSAGE_DISPLAY_TIME = 60  # 프레임 수 (약 1초, 60fps 기준)
+
+# 녹화 상태 관리
+video_writer = None
+recording = False
 
 print("\n=== AR Face Filter Started ===")
 print("프로그램이 시작되었습니다.\n")
@@ -482,28 +496,56 @@ while cap.isOpened():
     else:
         filter_text = "현재 필터: 없음"
     image = put_korean_text(image, filter_text, (10, 10), font_size=24, color=(0, 255, 0))
+
+    # 안전한 영역에 자막 배치 (아래에서 위로 5줄)
+    y_controls1 = max(20, h - 25)
+    y_controls2 = max(20, h - 50)
+    y_sizealpha = max(20, h - 75)
+    y_ss = max(20, h - 100)
+    y_status = max(20, h - 125)
+
+    # 단축키 안내 (두 줄로 분리)
     image = put_korean_text(
         image,
-        "[1]안경 [2]모자 [3]수염 [4]왕관 [0]모두해제 [+/-]크기 [ [/] ]알파 [s]스크린샷 [q]종료",
-        (10, h - 30),
+        "[1]안경 [2]모자 [3]수염 [4]왕관 [0]모두해제",
+        (10, y_controls1),
+        font_size=18,
+        color=(255, 255, 255),
+    )
+    image = put_korean_text(
+        image,
+        "[+/-]크기 [ [/] ]알파 [s]스크린샷 [r]녹화 [q]종료",
+        (10, y_controls2),
         font_size=18,
         color=(255, 255, 255),
     )
     # 크기/투명도 현재값 표시
     size_alpha_text = f"크기배율: {SIZE_SCALE:.1f} | 알파배율: {ALPHA_SCALE:.1f}"
-    image = put_korean_text(image, size_alpha_text, (10, h - 55), font_size=18, color=(0, 200, 255))
+    image = put_korean_text(image, size_alpha_text, (10, y_sizealpha), font_size=18, color=(0, 200, 255))
     # 스크린샷 설정 표시
-    ss_text = f"저장: {SCREENSHOT_DIR}/screenshot_*.{SCREENSHOT_FMT} | 품질: {SCREENSHOT_QUALITY}" if SCREENSHOT_FMT.lower() in ('jpg','jpeg') else f"저장: {SCREENSHOT_DIR}/screenshot_*.{SCREENSHOT_FMT}"
-    image = put_korean_text(image, ss_text, (10, h - 80), font_size=16, color=(180, 255, 180))
+    ss_text = (
+        f"저장: {SCREENSHOT_DIR}/screenshot_*.{SCREENSHOT_FMT} | 품질: {SCREENSHOT_QUALITY}"
+        if SCREENSHOT_FMT.lower() in ('jpg','jpeg')
+        else f"저장: {SCREENSHOT_DIR}/screenshot_*.{SCREENSHOT_FMT}"
+    )
+    image = put_korean_text(image, ss_text, (10, y_ss), font_size=16, color=(180, 255, 180))
+    # 녹화 상태 표시
+    if recording:
+        rec_text = "● REC"
+        image = put_korean_text(image, rec_text, (10, 50), font_size=24, color=(0, 0, 255))
     
     # --- [상태 메시지 표시] ---
     if status_message and message_timer > 0:
         # 메시지 표시 (텍스트만)
-        image = put_korean_text(image, status_message, (10, h - 60), font_size=20, color=(0, 255, 0))
+        image = put_korean_text(image, status_message, (10, y_status), font_size=20, color=(0, 255, 0))
         message_timer -= 1
 
     # 화면 출력
     cv2.imshow('AR Filter Project - Sejoong', image)
+
+    # 녹화 중이면 프레임 저장
+    if recording and video_writer is not None:
+        video_writer.write(image)
 
     # 키보드 입력 처리
     key = cv2.waitKey(5) & 0xFF
@@ -567,6 +609,36 @@ while cap.isOpened():
         ALPHA_SCALE = min(ALPHA_MAX, round(ALPHA_SCALE + ALPHA_STEP, 2))
         status_message = f"✨ 알파배율: {ALPHA_SCALE:.1f}"
         message_timer = MESSAGE_DISPLAY_TIME
+    elif key == ord('r') or key == ord('R'):
+        if not recording:
+            # 녹화 시작
+            if not os.path.exists(RECORD_DIR):
+                os.makedirs(RECORD_DIR)
+            filter_label = "none" if not active_filters else "_".join(active_filters)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = os.path.join(RECORD_DIR, f"record_{filter_label}_{timestamp}.mp4")
+            fourcc = cv2.VideoWriter_fourcc(*RECORD_CODEC)
+            fps = cap.get(cv2.CAP_PROP_FPS)
+            fps = fps if fps and fps > 1 else RECORD_FPS_FALLBACK
+            video_writer = cv2.VideoWriter(filename, fourcc, fps, (w, h))
+            if video_writer.isOpened():
+                recording = True
+                status_message = f"🔴 녹화 시작: {os.path.basename(filename)}"
+            else:
+                video_writer = None
+                recording = False
+                status_message = "❌ 녹화 시작 실패"
+            message_timer = MESSAGE_DISPLAY_TIME
+        else:
+            # 녹화 종료
+            recording = False
+            if video_writer:
+                video_writer.release()
+                video_writer = None
+            status_message = "⏹️ 녹화 종료"
+            message_timer = MESSAGE_DISPLAY_TIME
 
 cap.release()
+if video_writer:
+    video_writer.release()
 cv2.destroyAllWindows()
