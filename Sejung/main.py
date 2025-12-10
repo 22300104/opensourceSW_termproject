@@ -19,6 +19,14 @@ face_mesh = mp_face_mesh.FaceMesh(
 mp_selfie_segmentation = mp.solutions.selfie_segmentation
 selfie_segmentation = mp_selfie_segmentation.SelfieSegmentation(model_selection=1)
 
+# [제스처 컨트롤] 손 인식 초기화
+mp_hands = mp.solutions.hands
+hands = mp_hands.Hands(
+    max_num_hands=1,
+    min_detection_confidence=0.7, # 제스처 오작동 방지를 위해 정확도 높임
+    min_tracking_confidence=0.5
+)
+
 # --- [2. 필터 생성 함수들] ---
 def create_glasses_filter(width, height):
     """안경 필터 생성"""
@@ -138,7 +146,7 @@ def put_korean_text(img, text, position, font_size=30, color=(0, 255, 0), align=
             except: continue
         if font is None: font = ImageFont.load_default()
 
-        # 정렬 처리 (중앙 정렬 등)
+        # 정렬 처리
         x, y = position
         if align == 'center':
             bbox = draw.textbbox((0, 0), text, font=font)
@@ -173,15 +181,48 @@ RECORD_CODEC = "mp4v"
 RECORD_FPS_FALLBACK = 30
 
 # --- [7. 상태 관리] ---
-# UX 개선: 필터 목록을 리스트로 관리하여 인덱스로 접근
 FILTER_ITEMS = ['glasses', 'hat', 'mustache', 'crown']
 FILTER_LABELS = ['안경', '모자', '수염', '왕관']
-current_cursor_index = 0  # 현재 선택된 UI 커서 위치
-
-active_filters = ['glasses'] # 활성화된 필터들
-
+current_cursor_index = 0
+active_filters = ['glasses']
 background_mode = 0
 BACKGROUND_MODES = {0: "없음", 1: "블러", 2: "핑크", 3: "밤하늘"}
+
+# 제스처 쿨타임 관리
+gesture_cooldown = 0
+GESTURE_LOCK_TIME = 20 # 프레임
+
+# --- [제스처 인식 함수] ---
+def detect_gesture(hand_landmarks):
+    """
+    손 랜드마크를 분석하여 제스처 반환
+    Return: 'V', 'PALM', 'FIST', 'POINT', 'NONE'
+    """
+    # 손가락 끝(TIP)과 마디(PIP) 인덱스
+    # 검지(8), 중지(12), 약지(16), 소지(20)
+    tips = [8, 12, 16, 20]
+    pips = [6, 10, 14, 18]
+    
+    # 펴짐 여부 확인 (화면 좌표계: 위가 y 작음)
+    is_open = []
+    for tip, pip in zip(tips, pips):
+        is_open.append(hand_landmarks.landmark[tip].y < hand_landmarks.landmark[pip].y)
+    
+    # 제스처 판별
+    # 1. 보(PALM): 4개 모두 펴짐 -> 다음 메뉴 이동
+    if all(is_open):
+        return "PALM"
+    # 2. 주먹(FIST): 4개 모두 접힘 -> 선택/해제
+    if not any(is_open):
+        return "FIST"
+    # 3. 브이(V): 검지, 중지 펴짐 + 나머지 접힘 -> 스크린샷
+    if is_open[0] and is_open[1] and not is_open[2] and not is_open[3]:
+        return "V"
+    # 4. 검지(POINT): 검지 펴짐 + 나머지 접힘 -> 배경 변경
+    if is_open[0] and not is_open[1] and not is_open[2] and not is_open[3]:
+        return "POINT"
+        
+    return "NONE"
 
 # --- [배경 적용] ---
 def apply_background(image, mode):
@@ -202,7 +243,7 @@ def apply_background(image, mode):
         for i in range(h):
             color_val = int(100 * (i / h))
             bg_image[i, :] = (50, 20 + color_val, 0)
-        np.random.seed(42) # 별 위치 고정
+        np.random.seed(42)
         for _ in range(50):
             cv2.circle(bg_image, (np.random.randint(0, w), np.random.randint(0, h)), 
                       np.random.randint(1, 3), (255, 255, 255), -1)
@@ -331,10 +372,14 @@ def draw_ui(image, h, w):
         image = put_korean_text(image, status_text, (x_pos, y_pos + 20),
                                font_size=16, color=status_color, align='center')
 
-    # 상단 정보 표시 (배경 모드 등)
+    # 상단 정보 표시
     top_info = f"배경: {BACKGROUND_MODES[background_mode]}"
     image = put_korean_text(image, top_info, (20, 20), font_size=20, color=(255, 255, 255))
     
+    # 제스처 가이드 추가
+    gesture_guide = "손동작: ✌(촬영) 🖐(이동) ✊(선택) ☝(배경)"
+    image = put_korean_text(image, gesture_guide, (w - 20, 70), font_size=18, color=(255, 200, 100), align='right')
+
     # 조작 가이드 (위치 상향 조정)
     guide = "이동:[A/D]  선택:[SPACE]  배경:[TAB]  크기:[+/-]  투명도:[ [/] ]  촬영:[S]  녹화:[R]"
     image = put_korean_text(image, guide, (w//2, h - 25), font_size=16, color=(200, 200, 200), align='center')
@@ -355,9 +400,14 @@ while cap.isOpened():
     success, image = cap.read()
     if not success: break
 
+    # 성능 최적화: 이미지 쓰기 금지
     image.flags.writeable = False
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    results = face_mesh.process(image)
+    
+    # Face Mesh & Hands 처리
+    results_face = face_mesh.process(image)
+    results_hands = hands.process(image)
+    
     image.flags.writeable = True
     image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
     
@@ -365,14 +415,58 @@ while cap.isOpened():
     
     h, w, c = image.shape
     
-    if results.multi_face_landmarks:
-        for face_landmarks in results.multi_face_landmarks:
+    # 얼굴 필터 처리
+    if results_face.multi_face_landmarks:
+        for face_landmarks in results_face.multi_face_landmarks:
             image = apply_filters(image, face_landmarks, active_filters, h, w)
             # 입 벌림 효과
             top_y = face_landmarks.landmark[13].y
             bot_y = face_landmarks.landmark[14].y
             if int(abs(top_y - bot_y) * h) > 40:
                 cv2.putText(image, "Wow!", (50, 150), cv2.FONT_HERSHEY_SIMPLEX, 3, (0, 0, 255), 5)
+
+    # 제스처 처리
+    if results_hands.multi_hand_landmarks:
+        for hand_landmarks in results_hands.multi_hand_landmarks:
+            # 손 랜드마크 그리기 (디버깅용)
+            mp.solutions.drawing_utils.draw_landmarks(image, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+            
+            # 쿨타임 체크
+            if gesture_cooldown == 0:
+                gesture = detect_gesture(hand_landmarks)
+                
+                if gesture != "NONE":
+                    if gesture == "V": # 스크린샷
+                        f_name = "_".join(active_filters) if active_filters else "none"
+                        if save_screenshot(image, f_name):
+                            status_message = "✌ 찰칵!"
+                        gesture_cooldown = GESTURE_LOCK_TIME * 2 # 촬영은 쿨타임 길게
+                        
+                    elif gesture == "PALM": # 이동 (오른쪽으로)
+                        current_cursor_index = (current_cursor_index + 1) % len(FILTER_ITEMS)
+                        status_message = "🖐 이동"
+                        gesture_cooldown = GESTURE_LOCK_TIME
+                        
+                    elif gesture == "FIST": # 선택/해제
+                        selected_item = FILTER_ITEMS[current_cursor_index]
+                        if selected_item in active_filters:
+                            active_filters.remove(selected_item)
+                            status_message = "✊ 해제"
+                        else:
+                            active_filters.append(selected_item)
+                            status_message = "✊ 장착"
+                        gesture_cooldown = GESTURE_LOCK_TIME
+                        
+                    elif gesture == "POINT": # 배경 변경
+                        background_mode = (background_mode + 1) % len(BACKGROUND_MODES)
+                        status_message = f"☝ 배경: {BACKGROUND_MODES[background_mode]}"
+                        gesture_cooldown = GESTURE_LOCK_TIME
+                    
+                    message_timer = 30
+
+    # 쿨타임 감소
+    if gesture_cooldown > 0:
+        gesture_cooldown -= 1
 
     # UI 그리기
     image = draw_ui(image, h, w)
@@ -394,11 +488,11 @@ while cap.isOpened():
     if key == ord('q'): break
     
     # --- [UX 조작 키 매핑] ---
-    elif key == ord('a') or key == ord('A'): # 왼쪽 이동
+    elif key == ord('a') or key == ord('A'):
         current_cursor_index = (current_cursor_index - 1) % len(FILTER_ITEMS)
-    elif key == ord('d') or key == ord('D'): # 오른쪽 이동
+    elif key == ord('d') or key == ord('D'):
         current_cursor_index = (current_cursor_index + 1) % len(FILTER_ITEMS)
-    elif key == ord(' '): # 스페이스바: 선택/해제
+    elif key == ord(' '):
         selected_item = FILTER_ITEMS[current_cursor_index]
         if selected_item in active_filters:
             active_filters.remove(selected_item)
@@ -408,7 +502,7 @@ while cap.isOpened():
             status_message = "ON"
         message_timer = 20
     
-    elif key == 9: # Tab 키: 배경 변경
+    elif key == 9: # Tab
         background_mode = (background_mode + 1) % len(BACKGROUND_MODES)
         status_message = f"배경: {BACKGROUND_MODES[background_mode]}"
         message_timer = 30
