@@ -242,6 +242,11 @@ ALPHA_STEP = 0.1
 SIZE_MIN, SIZE_MAX = 0.5, 3.0
 ALPHA_MIN, ALPHA_MAX = 0.1, 2.0
 
+# --- [6-2. 스크린샷 설정] ---
+SCREENSHOT_DIR = "screenshots"        # 저장 폴더
+SCREENSHOT_FMT = "jpg"                # jpg 또는 png
+SCREENSHOT_QUALITY = 95               # jpg 품질 (1~100), png일 때는 무시
+
 # --- [7. 필터 관리 시스템] ---
 # 여러 필터를 동시에 적용할 수 있도록 리스트로 관리
 active_filters = ['glasses']  # 기본 활성 필터 목록
@@ -397,18 +402,27 @@ def save_screenshot(image, filter_name='none'):
     """현재 화면을 이미지 파일로 저장"""
     try:
         # 저장 폴더 설정
-        save_dir = 'screenshots'
+        save_dir = SCREENSHOT_DIR
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
         
         # 파일명 생성 (타임스탬프 + 필터명)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"{save_dir}/screenshot_{filter_name}_{timestamp}.jpg"
+        basename = f"screenshot_{filter_name}_{timestamp}"
+        ext = SCREENSHOT_FMT.lower()
+        filename = os.path.join(save_dir, f"{basename}.{ext}")
         
-        # 이미지 저장
-        cv2.imwrite(filename, image)
-        return filename
-    except Exception as e:
+        # 이미지 저장 옵션
+        params = []
+        if ext in ("jpg", "jpeg"):
+            params = [cv2.IMWRITE_JPEG_QUALITY, SCREENSHOT_QUALITY]
+        elif ext == "png":
+            # PNG 압축레벨 0~9 (낮을수록 빠르고 용량 큼)
+            params = [cv2.IMWRITE_PNG_COMPRESSION, 3]
+        
+        success = cv2.imwrite(filename, image, params) if params else cv2.imwrite(filename, image)
+        return filename if success else None
+    except Exception:
         return None
 
 # --- [8. 메인 실행 루프] ---
@@ -478,6 +492,9 @@ while cap.isOpened():
     # 크기/투명도 현재값 표시
     size_alpha_text = f"크기배율: {SIZE_SCALE:.1f} | 알파배율: {ALPHA_SCALE:.1f}"
     image = put_korean_text(image, size_alpha_text, (10, h - 55), font_size=18, color=(0, 200, 255))
+    # 스크린샷 설정 표시
+    ss_text = f"저장: {SCREENSHOT_DIR}/screenshot_*.{SCREENSHOT_FMT} | 품질: {SCREENSHOT_QUALITY}" if SCREENSHOT_FMT.lower() in ('jpg','jpeg') else f"저장: {SCREENSHOT_DIR}/screenshot_*.{SCREENSHOT_FMT}"
+    image = put_korean_text(image, ss_text, (10, h - 80), font_size=16, color=(180, 255, 180))
     
     # --- [상태 메시지 표시] ---
     if status_message and message_timer > 0:
@@ -497,7 +514,7 @@ while cap.isOpened():
         filter_label = "none" if not active_filters else "_".join(active_filters)
         saved_path = save_screenshot(image, filter_label)
         if saved_path:
-            status_message = "📸 스크린샷 저장 완료!"
+            status_message = f"📸 저장 완료: {os.path.basename(saved_path)}"
             message_timer = MESSAGE_DISPLAY_TIME
         else:
             status_message = "❌ 스크린샷 저장 실패"
