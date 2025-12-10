@@ -234,6 +234,14 @@ FILTER_SETTINGS = {
     }
 }
 
+# --- [6-1. 전역 조절 파라미터] ---
+SIZE_SCALE = 1.0          # 필터 크기 배율 (실시간 조절)
+ALPHA_SCALE = 1.0         # 필터 투명도 배율 (실시간 조절)
+SIZE_STEP = 0.1
+ALPHA_STEP = 0.1
+SIZE_MIN, SIZE_MAX = 0.5, 3.0
+ALPHA_MIN, ALPHA_MAX = 0.1, 2.0
+
 # --- [7. 필터 관리 시스템] ---
 # 여러 필터를 동시에 적용할 수 있도록 리스트로 관리
 active_filters = ['glasses']  # 기본 활성 필터 목록
@@ -265,7 +273,8 @@ def apply_filter(image, face_landmarks, filter_type, h, w):
     
     # 설정 가져오기
     settings = FILTER_SETTINGS.get(filter_type, {})
-    size_ratio = settings.get('size_ratio', 2.0)
+    # 전역 크기/투명도 배율 적용
+    size_ratio = settings.get('size_ratio', 2.0) * SIZE_SCALE
     height_ratio = settings.get('height_ratio', 0.5)
     offset_x = settings.get('offset_x', 0)
     offset_y = settings.get('offset_y', 0)
@@ -287,6 +296,8 @@ def apply_filter(image, face_landmarks, filter_type, h, w):
             # 회전
             M = cv2.getRotationMatrix2D((glass_width//2, glass_height//2), -angle, 1)
             rotated_filter = cv2.warpAffine(filter_img, M, (glass_width, glass_height))
+            if rotated_filter.shape[2] == 4 and ALPHA_SCALE != 1.0:
+                rotated_filter[:, :, 3] = np.clip(rotated_filter[:, :, 3] * ALPHA_SCALE, 0, 255)
             
             center_x = (lx + rx) // 2 - glass_width // 2 + offset_x
             center_y = (ly + ry) // 2 - glass_height // 2 + offset_y
@@ -310,6 +321,8 @@ def apply_filter(image, face_landmarks, filter_type, h, w):
         
         M = cv2.getRotationMatrix2D((hat_width//2, hat_height//2), -angle, 1)
         rotated_filter = cv2.warpAffine(filter_img, M, (hat_width, hat_height))
+        if rotated_filter.shape[2] == 4 and ALPHA_SCALE != 1.0:
+            rotated_filter[:, :, 3] = np.clip(rotated_filter[:, :, 3] * ALPHA_SCALE, 0, 255)
         
         center_x = fx - hat_width // 2 + offset_x
         center_y = fy - hat_height + offset_y
@@ -336,6 +349,8 @@ def apply_filter(image, face_landmarks, filter_type, h, w):
         
         M = cv2.getRotationMatrix2D((mustache_width//2, mustache_height//2), -angle, 1)
         rotated_filter = cv2.warpAffine(filter_img, M, (mustache_width, mustache_height))
+        if rotated_filter.shape[2] == 4 and ALPHA_SCALE != 1.0:
+            rotated_filter[:, :, 3] = np.clip(rotated_filter[:, :, 3] * ALPHA_SCALE, 0, 255)
         
         center_x = (nx + ux) // 2 - mustache_width // 2 + offset_x
         center_y = (ny + uy) // 2 + offset_y
@@ -359,6 +374,8 @@ def apply_filter(image, face_landmarks, filter_type, h, w):
         
         M = cv2.getRotationMatrix2D((crown_width//2, crown_height//2), -angle, 1)
         rotated_filter = cv2.warpAffine(filter_img, M, (crown_width, crown_height))
+        if rotated_filter.shape[2] == 4 and ALPHA_SCALE != 1.0:
+            rotated_filter[:, :, 3] = np.clip(rotated_filter[:, :, 3] * ALPHA_SCALE, 0, 255)
         
         center_x = fx - crown_width // 2 + offset_x
         center_y = fy - crown_height + offset_y
@@ -453,11 +470,14 @@ while cap.isOpened():
     image = put_korean_text(image, filter_text, (10, 10), font_size=24, color=(0, 255, 0))
     image = put_korean_text(
         image,
-        "[1]안경 [2]모자 [3]수염 [4]왕관 [0]모두해제 [s]스크린샷 [q]종료",
+        "[1]안경 [2]모자 [3]수염 [4]왕관 [0]모두해제 [+/-]크기 [ [/] ]알파 [s]스크린샷 [q]종료",
         (10, h - 30),
         font_size=18,
         color=(255, 255, 255),
     )
+    # 크기/투명도 현재값 표시
+    size_alpha_text = f"크기배율: {SIZE_SCALE:.1f} | 알파배율: {ALPHA_SCALE:.1f}"
+    image = put_korean_text(image, size_alpha_text, (10, h - 55), font_size=18, color=(0, 200, 255))
     
     # --- [상태 메시지 표시] ---
     if status_message and message_timer > 0:
@@ -513,6 +533,22 @@ while cap.isOpened():
     elif key == ord('0'):
         active_filters = []
         status_message = "✅ 필터 모두 해제"
+        message_timer = MESSAGE_DISPLAY_TIME
+    elif key in (ord('+'), ord('=')):  # 크기 증가
+        SIZE_SCALE = min(SIZE_MAX, round(SIZE_SCALE + SIZE_STEP, 2))
+        status_message = f"🔍 크기배율: {SIZE_SCALE:.1f}"
+        message_timer = MESSAGE_DISPLAY_TIME
+    elif key in (ord('-'), ord('_')):  # 크기 감소
+        SIZE_SCALE = max(SIZE_MIN, round(SIZE_SCALE - SIZE_STEP, 2))
+        status_message = f"🔍 크기배율: {SIZE_SCALE:.1f}"
+        message_timer = MESSAGE_DISPLAY_TIME
+    elif key == ord('['):  # 알파 감소
+        ALPHA_SCALE = max(ALPHA_MIN, round(ALPHA_SCALE - ALPHA_STEP, 2))
+        status_message = f"✨ 알파배율: {ALPHA_SCALE:.1f}"
+        message_timer = MESSAGE_DISPLAY_TIME
+    elif key == ord(']'):  # 알파 증가
+        ALPHA_SCALE = min(ALPHA_MAX, round(ALPHA_SCALE + ALPHA_STEP, 2))
+        status_message = f"✨ 알파배율: {ALPHA_SCALE:.1f}"
         message_timer = MESSAGE_DISPLAY_TIME
 
 cap.release()
