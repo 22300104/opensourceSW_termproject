@@ -15,43 +15,37 @@ face_mesh = mp_face_mesh.FaceMesh(
     min_tracking_confidence=0.5
 )
 
+# [가상 배경] 세그멘테이션 초기화
+mp_selfie_segmentation = mp.solutions.selfie_segmentation
+selfie_segmentation = mp_selfie_segmentation.SelfieSegmentation(model_selection=1)
+
 # --- [2. 필터 생성 함수들] ---
 def create_glasses_filter(width, height):
     """안경 필터 생성"""
     img = np.zeros((height, width, 4), dtype=np.uint8)
-    # 두 개의 원형 렌즈
     lens_radius = min(width, height) // 4
     cv2.circle(img, (width//4, height//2), lens_radius, (50, 50, 50, 200), -1)
     cv2.circle(img, (3*width//4, height//2), lens_radius, (50, 50, 50, 200), -1)
-    # 프레임
     cv2.circle(img, (width//4, height//2), lens_radius, (0, 0, 0, 255), 3)
     cv2.circle(img, (3*width//4, height//2), lens_radius, (0, 0, 0, 255), 3)
-    # 다리
     cv2.line(img, (width//4 - lens_radius, height//2), (0, height//2), (0, 0, 0, 255), 3)
     cv2.line(img, (3*width//4 + lens_radius, height//2), (width, height//2), (0, 0, 0, 255), 3)
-    # 다리 연결
     cv2.line(img, (width//4, height//2 - lens_radius//2), (3*width//4, height//2 - lens_radius//2), (0, 0, 0, 255), 3)
     return img
 
 def create_hat_filter(width, height):
     """모자 필터 생성"""
     img = np.zeros((height, width, 4), dtype=np.uint8)
-    # 모자 본체 (타원형)
     cv2.ellipse(img, (width//2, height//3), (width//2, height//3), 0, 0, 180, (139, 69, 19, 255), -1)
-    # 모자 테두리
     cv2.ellipse(img, (width//2, height//3), (width//2, height//3), 0, 0, 180, (0, 0, 0, 255), 3)
-    # 모자 장식 (리본)
     cv2.rectangle(img, (width//2 - 20, height//3 - 5), (width//2 + 20, height//3 + 5), (255, 0, 0, 255), -1)
     return img
 
 def create_mustache_filter(width, height):
     """수염 필터 생성"""
     img = np.zeros((height, width, 4), dtype=np.uint8)
-    # 수염 본체 (타원형)
     cv2.ellipse(img, (width//2, height//2), (width//3, height//4), 0, 0, 360, (50, 50, 50, 220), -1)
-    # 수염 테두리
     cv2.ellipse(img, (width//2, height//2), (width//3, height//4), 0, 0, 360, (0, 0, 0, 255), 2)
-    # 양쪽 끝 강조
     cv2.ellipse(img, (width//4, height//2), (width//8, height//6), 0, 0, 360, (50, 50, 50, 220), -1)
     cv2.ellipse(img, (3*width//4, height//2), (width//8, height//6), 0, 0, 360, (50, 50, 50, 220), -1)
     return img
@@ -59,30 +53,23 @@ def create_mustache_filter(width, height):
 def create_crown_filter(width, height):
     """왕관 필터 생성"""
     img = np.zeros((height, width, 4), dtype=np.uint8)
-    # 왕관 본체
     points = np.array([
-        [width//2, 0],
-        [width//2 - width//4, height//2],
-        [width//4, height//2],
-        [width//2, height//3],
-        [3*width//4, height//2],
-        [width//2 + width//4, height//2]
+        [width//2, 0], [width//2 - width//4, height//2], [width//4, height//2],
+        [width//2, height//3], [3*width//4, height//2], [width//2 + width//4, height//2]
     ], np.int32)
     cv2.fillPoly(img, [points], (255, 215, 0, 255))
     cv2.polylines(img, [points], True, (0, 0, 0, 255), 2)
-    # 보석 장식
     cv2.circle(img, (width//2, height//6), 5, (255, 0, 0, 255), -1)
     cv2.circle(img, (width//4, height//3), 4, (0, 255, 0, 255), -1)
     cv2.circle(img, (3*width//4, height//3), 4, (0, 0, 255, 255), -1)
     return img
 
-# --- [3. 핵심 함수: 투명 이미지 합성 (Alpha Blending)] ---
+# --- [3. 핵심 함수: 투명 이미지 합성] ---
 def overlay_transparent(background, overlay, x, y):
     try:
         bg_h, bg_w, _ = background.shape
         h, w, _ = overlay.shape
 
-        # 화면 밖으로 나가는 경우 예외 처리 (좌표 보정)
         if x < 0: 
             overlay = overlay[:, -x:]
             w = overlay.shape[1]
@@ -98,12 +85,8 @@ def overlay_transparent(background, overlay, x, y):
             overlay = overlay[:bg_h - y, :]
             h = overlay.shape[0]
 
-        # 알파 채널(투명도) 분리 (0~1 사이 값으로 변환)
         alpha = overlay[:, :, 3] / 255.0
         colors = overlay[:, :, :3]
-        
-        # 합성 공식: (배경 * (1-알파)) + (덮어쓸 이미지 * 알파)
-        # 배경 이미지의 해당 영역(ROI)을 가져와서 합성
         roi = background[y:y+h, x:x+w]
         
         for c in range(0, 3):
@@ -112,533 +95,354 @@ def overlay_transparent(background, overlay, x, y):
         background[y:y+h, x:x+w] = roi
         return background
     except Exception as e:
-        # 에러 발생 시 그냥 원본 반환 (프로그램 꺼짐 방지)
         return background
 
-# --- [4. 이미지 파일 로드 함수] ---
+# --- [4. 이미지 파일 로드] ---
 def load_filter_image(filename, default_width=300, default_height=100, create_func=None):
-    """필터 이미지를 로드하는 함수"""
     current_dir = os.getcwd()
-    possible_paths = [
-        filename,
-        os.path.join('Sejung', filename),
-        os.path.join('..', filename)
-    ]
-    
+    possible_paths = [filename, os.path.join('Sejung', filename), os.path.join('..', filename)]
     img = None
     for path in possible_paths:
         if os.path.exists(path):
             img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
             if img is not None:
-                print(f"✅ 이미지 로드 성공! 경로: {path}")
+                print(f"✅ 이미지 로드 성공: {path}")
                 break
-    
-    if img is None:
-        if create_func:
-            print(f"⚠️ '{filename}' 파일을 찾을 수 없어 코드로 생성된 필터를 사용합니다.")
-            img = create_func(default_width, default_height)
-        else:
-            print(f"⚠️ '{filename}' 파일을 찾을 수 없습니다.")
-            return None
-    elif img.shape[2] < 4:
-        print(f"⚠️ 경고: '{filename}'에 투명도(Alpha) 채널이 없습니다! 알파 채널을 추가합니다.")
-        # 알파 채널 추가
+    if img is None and create_func:
+        print(f"⚠️ '{filename}' 대체 코드 사용")
+        img = create_func(default_width, default_height)
+    elif img is not None and img.shape[2] < 4:
         img = cv2.cvtColor(img, cv2.COLOR_BGR2BGRA)
-    
     return img
 
-# 모든 필터 이미지 로드
-print("\n=== 필터 이미지 로드 중 ===")
+print("\n=== 리소스 로드 중 ===")
 glasses_img = load_filter_image('glasses.png', 300, 100, create_glasses_filter)
 hat_img = load_filter_image('hat.png', 300, 180, create_hat_filter)
 mustache_img = load_filter_image('mustache.png', 300, 150, create_mustache_filter)
 crown_img = load_filter_image('crown.png', 300, 240, create_crown_filter)
 print("=" * 30 + "\n")
 
-# --- [5. 한글 텍스트 출력 함수] ---
-def put_korean_text(img, text, position, font_size=30, color=(0, 255, 0)):
-    """한글 텍스트를 이미지에 출력하는 함수"""
+# --- [5. UI 및 텍스트 관련] ---
+def put_korean_text(img, text, position, font_size=30, color=(0, 255, 0), align='left'):
     try:
-        # PIL로 변환
         img_pil = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
         draw = ImageDraw.Draw(img_pil)
         
-        # 폰트 로드 시도 (여러 경로 시도)
         font = None
-        font_paths = [
-            "C:/Windows/Fonts/malgun.ttf",      # 맑은 고딕
-            "C:/Windows/Fonts/gulim.ttc",        # 굴림
-            "C:/Windows/Fonts/batang.ttc",       # 바탕
-            "malgun.ttf",
-            "gulim.ttc",
-        ]
-        
+        font_paths = ["C:/Windows/Fonts/malgun.ttf", "malgun.ttf", "gulim.ttc"]
         for font_path in font_paths:
             try:
                 if os.path.exists(font_path):
                     font = ImageFont.truetype(font_path, font_size)
                     break
-            except:
-                continue
+            except: continue
+        if font is None: font = ImageFont.load_default()
+
+        # 정렬 처리 (중앙 정렬 등)
+        x, y = position
+        if align == 'center':
+            bbox = draw.textbbox((0, 0), text, font=font)
+            text_width = bbox[2] - bbox[0]
+            x = x - text_width // 2
         
-        if font is None:
-            try:
-                font = ImageFont.load_default()
-            except:
-                pass
-        
-        # 텍스트 그리기
-        if font:
-            draw.text(position, text, font=font, fill=color)
-        else:
-            draw.text(position, text, fill=color)
-        
-        # OpenCV 형식으로 다시 변환
+        draw.text((x, y), text, font=font, fill=color)
         img = cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
-    except Exception as e:
-        # 에러 발생 시 영문으로 대체
-        try:
-            cv2.putText(img, text.encode('ascii', 'ignore').decode('ascii'), position, 
-                       cv2.FONT_HERSHEY_SIMPLEX, font_size/30, color, 2)
-        except:
-            pass
+    except: pass
     return img
 
-# --- [6. 필터 위치 조정 파라미터 (여기서 수정하세요!)] ---
-# 각 필터의 크기 비율과 위치 오프셋을 조정할 수 있습니다
-# 프로그램 실행 후 필터 위치가 맞지 않으면 이 값들을 조정하세요!
+# --- [6. 필터 설정] ---
 FILTER_SETTINGS = {
-    'glasses': {
-        'size_ratio': 2.3,      # 눈 사이 거리의 몇 배로 할지 (크기 조절)
-        'height_ratio': 0.4,     # 너비 대비 높이 비율 (실제 이미지 사용 시 무시됨)
-        'offset_x': 0,          # X축 오프셋 (양수: 오른쪽, 음수: 왼쪽)
-        'offset_y': 0,          # Y축 오프셋 (양수: 아래로, 음수: 위로)
-    },
-    'hat': {
-        'size_ratio': 2.5,      # 크기 조절 (값을 크게 하면 모자가 커짐)
-        'height_ratio': 0.6,     # 높이 비율
-        'offset_x': 0,          # 좌우 이동 (양수: 오른쪽, 음수: 왼쪽)
-        'offset_y': 60,         # 상하 이동 (양수: 아래로, 음수: 위로) - 모자는 낮게 (가장 큰 움직임)
-    },
-    'mustache': {
-        'size_ratio': 1.8,      # 크기 조절
-        'height_ratio': 0.5,     # 높이 비율
-        'offset_x': 0,          # 좌우 이동
-        'offset_y': -25,        # 상하 이동 (양수: 아래, 음수: 위로) - 수염은 높게 (중간 움직임)
-    },
-    'crown': {
-        'size_ratio': 2.2,      # 크기 조절
-        'height_ratio': 0.8,     # 높이 비율
-        'offset_x': 0,          # 좌우 이동
-        'offset_y': 15,         # 상하 이동 (양수: 아래로, 음수: 위로) - 왕관은 낮게 (가장 작은 움직임)
-    }
+    'glasses': {'size_ratio': 2.3, 'height_ratio': 0.4, 'offset_x': 0, 'offset_y': 0},
+    'hat': {'size_ratio': 2.5, 'height_ratio': 0.6, 'offset_x': 0, 'offset_y': 60},
+    'mustache': {'size_ratio': 1.8, 'height_ratio': 0.5, 'offset_x': 0, 'offset_y': -25},
+    'crown': {'size_ratio': 2.2, 'height_ratio': 0.8, 'offset_x': 0, 'offset_y': 15}
 }
 
-# --- [6-1. 전역 조절 파라미터] ---
-SIZE_SCALE = 1.0          # 필터 크기 배율 (실시간 조절)
-ALPHA_SCALE = 1.0         # 필터 투명도 배율 (실시간 조절)
+SIZE_SCALE = 1.0
+ALPHA_SCALE = 1.0
 SIZE_STEP = 0.1
 ALPHA_STEP = 0.1
 SIZE_MIN, SIZE_MAX = 0.5, 3.0
 ALPHA_MIN, ALPHA_MAX = 0.1, 2.0
 
-# --- [6-2. 스크린샷 설정] ---
-SCREENSHOT_DIR = "screenshots"        # 저장 폴더
-SCREENSHOT_FMT = "jpg"                # jpg 또는 png
-SCREENSHOT_QUALITY = 95               # jpg 품질 (1~100), png일 때는 무시
-
-# --- [6-3. 녹화 설정] ---
+SCREENSHOT_DIR = "screenshots"
+SCREENSHOT_FMT = "jpg"
+SCREENSHOT_QUALITY = 95
 RECORD_DIR = "videos"
-RECORD_CODEC = "mp4v"    # mp4v, XVID 등
+RECORD_CODEC = "mp4v"
 RECORD_FPS_FALLBACK = 30
 
-# --- [7. 필터 관리 시스템] ---
-# 여러 필터를 동시에 적용할 수 있도록 리스트로 관리
-active_filters = ['glasses']  # 기본 활성 필터 목록
-filter_names = {
-    'glasses': '안경',
-    'hat': '모자',
-    'mustache': '수염',
-    'crown': '왕관',
-    'none': '없음'
-}
+# --- [7. 상태 관리] ---
+# UX 개선: 필터 목록을 리스트로 관리하여 인덱스로 접근
+FILTER_ITEMS = ['glasses', 'hat', 'mustache', 'crown']
+FILTER_LABELS = ['안경', '모자', '수염', '왕관']
+current_cursor_index = 0  # 현재 선택된 UI 커서 위치
 
+active_filters = ['glasses'] # 활성화된 필터들
 
-# --- [6. 필터 적용 함수] ---
-def apply_filter(image, face_landmarks, filter_type, h, w):
-    """얼굴 랜드마크에 따라 필터를 적용하는 함수"""
-    if filter_type == 'none':
-        return image
+background_mode = 0
+BACKGROUND_MODES = {0: "없음", 1: "블러", 2: "핑크", 3: "밤하늘"}
+
+# --- [배경 적용] ---
+def apply_background(image, mode):
+    if mode == 0: return image
+    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    results = selfie_segmentation.process(image_rgb)
+    mask = results.segmentation_mask
+    condition = np.stack((mask,) * 3, axis=-1) > 0.5
     
-    # 공통 좌표 계산
+    h, w, c = image.shape
+    if mode == 1:
+        bg_image = cv2.GaussianBlur(image, (55, 55), 0)
+    elif mode == 2:
+        bg_image = np.zeros((h, w, 3), dtype=np.uint8)
+        bg_image[:] = (180, 105, 255)
+    elif mode == 3:
+        bg_image = np.zeros((h, w, 3), dtype=np.uint8)
+        for i in range(h):
+            color_val = int(100 * (i / h))
+            bg_image[i, :] = (50, 20 + color_val, 0)
+        np.random.seed(42) # 별 위치 고정
+        for _ in range(50):
+            cv2.circle(bg_image, (np.random.randint(0, w), np.random.randint(0, h)), 
+                      np.random.randint(1, 3), (255, 255, 255), -1)
+    
+    return np.where(condition, image, bg_image) if 'bg_image' in locals() else image
+
+# --- [필터 적용] ---
+def apply_filter(image, face_landmarks, filter_type, h, w):
+    if filter_type == 'none': return image
+    
     left_eye = face_landmarks.landmark[33]
     right_eye = face_landmarks.landmark[263]
     lx, ly = int(left_eye.x * w), int(left_eye.y * h)
     rx, ry = int(right_eye.x * w), int(right_eye.y * h)
     
-    dx = rx - lx
-    dy = ry - ly
+    dx, dy = rx - lx, ry - ly
     angle = np.degrees(np.arctan2(dy, dx))
     eye_dist = np.sqrt(dx**2 + dy**2)
     
-    # 설정 가져오기
     settings = FILTER_SETTINGS.get(filter_type, {})
-    # 전역 크기/투명도 배율 적용
     size_ratio = settings.get('size_ratio', 2.0) * SIZE_SCALE
     height_ratio = settings.get('height_ratio', 0.5)
-    offset_x = settings.get('offset_x', 0)
-    offset_y = settings.get('offset_y', 0)
+    offset_x, offset_y = settings.get('offset_x', 0), settings.get('offset_y', 0)
+    
+    filter_img = None
+    target_width = int(eye_dist * size_ratio)
     
     if filter_type == 'glasses':
-        # 안경 필터
-        glass_width = int(eye_dist * size_ratio)
-        if glass_width > 0:
-            if glasses_img is not None:
-                # 실제 이미지 사용
-                scale_factor = glass_width / glasses_img.shape[1]
-                glass_height = int(glasses_img.shape[0] * scale_factor)
-                filter_img = cv2.resize(glasses_img.copy(), (glass_width, glass_height))
-            else:
-                # 코드로 생성
-                glass_height = int(glass_width * height_ratio)
-                filter_img = create_glasses_filter(glass_width, glass_height)
-            
-            # 회전
-            M = cv2.getRotationMatrix2D((glass_width//2, glass_height//2), -angle, 1)
-            rotated_filter = cv2.warpAffine(filter_img, M, (glass_width, glass_height))
-            if rotated_filter.shape[2] == 4 and ALPHA_SCALE != 1.0:
-                rotated_filter[:, :, 3] = np.clip(rotated_filter[:, :, 3] * ALPHA_SCALE, 0, 255)
-            
-            center_x = (lx + rx) // 2 - glass_width // 2 + offset_x
-            center_y = (ly + ry) // 2 - glass_height // 2 + offset_y
-            image = overlay_transparent(image, rotated_filter, center_x, center_y)
-    
+        if glasses_img is not None:
+            scale = target_width / glasses_img.shape[1]
+            filter_img = cv2.resize(glasses_img.copy(), (target_width, int(glasses_img.shape[0] * scale)))
+        else: filter_img = create_glasses_filter(target_width, int(target_width * height_ratio))
+        center_x = (lx + rx) // 2 - target_width // 2 + offset_x
+        center_y = (ly + ry) // 2 - filter_img.shape[0] // 2 + offset_y
+        
     elif filter_type == 'hat':
-        # 모자 필터 (이마 위)
         forehead = face_landmarks.landmark[10]
         fx, fy = int(forehead.x * w), int(forehead.y * h)
-        hat_width = int(eye_dist * size_ratio)
-        
         if hat_img is not None:
-            # 실제 이미지 사용
-            scale_factor = hat_width / hat_img.shape[1]
-            hat_height = int(hat_img.shape[0] * scale_factor)
-            filter_img = cv2.resize(hat_img.copy(), (hat_width, hat_height))
-        else:
-            # 코드로 생성
-            hat_height = int(hat_width * height_ratio)
-            filter_img = create_hat_filter(hat_width, hat_height)
-        
-        M = cv2.getRotationMatrix2D((hat_width//2, hat_height//2), -angle, 1)
-        rotated_filter = cv2.warpAffine(filter_img, M, (hat_width, hat_height))
-        if rotated_filter.shape[2] == 4 and ALPHA_SCALE != 1.0:
-            rotated_filter[:, :, 3] = np.clip(rotated_filter[:, :, 3] * ALPHA_SCALE, 0, 255)
-        
-        center_x = fx - hat_width // 2 + offset_x
-        center_y = fy - hat_height + offset_y
-        image = overlay_transparent(image, rotated_filter, center_x, center_y)
-    
+            scale = target_width / hat_img.shape[1]
+            filter_img = cv2.resize(hat_img.copy(), (target_width, int(hat_img.shape[0] * scale)))
+        else: filter_img = create_hat_filter(target_width, int(target_width * height_ratio))
+        center_x = fx - target_width // 2 + offset_x
+        center_y = fy - filter_img.shape[0] + offset_y
+
     elif filter_type == 'mustache':
-        # 수염 필터 (코 아래)
-        nose_tip = face_landmarks.landmark[4]
-        upper_lip = face_landmarks.landmark[13]
-        nx, ny = int(nose_tip.x * w), int(nose_tip.y * h)
-        ux, uy = int(upper_lip.x * w), int(upper_lip.y * h)
-        
-        mustache_width = int(eye_dist * size_ratio)
-        
+        nose = face_landmarks.landmark[4]
+        lip = face_landmarks.landmark[13]
+        nx, ny = int(nose.x * w), int(nose.y * h)
+        ux, uy = int(lip.x * w), int(lip.y * h)
         if mustache_img is not None:
-            # 실제 이미지 사용
-            scale_factor = mustache_width / mustache_img.shape[1]
-            mustache_height = int(mustache_img.shape[0] * scale_factor)
-            filter_img = cv2.resize(mustache_img.copy(), (mustache_width, mustache_height))
-        else:
-            # 코드로 생성
-            mustache_height = int(mustache_width * height_ratio)
-            filter_img = create_mustache_filter(mustache_width, mustache_height)
-        
-        M = cv2.getRotationMatrix2D((mustache_width//2, mustache_height//2), -angle, 1)
-        rotated_filter = cv2.warpAffine(filter_img, M, (mustache_width, mustache_height))
-        if rotated_filter.shape[2] == 4 and ALPHA_SCALE != 1.0:
-            rotated_filter[:, :, 3] = np.clip(rotated_filter[:, :, 3] * ALPHA_SCALE, 0, 255)
-        
-        center_x = (nx + ux) // 2 - mustache_width // 2 + offset_x
+            scale = target_width / mustache_img.shape[1]
+            filter_img = cv2.resize(mustache_img.copy(), (target_width, int(mustache_img.shape[0] * scale)))
+        else: filter_img = create_mustache_filter(target_width, int(target_width * height_ratio))
+        center_x = (nx + ux) // 2 - target_width // 2 + offset_x
         center_y = (ny + uy) // 2 + offset_y
-        image = overlay_transparent(image, rotated_filter, center_x, center_y)
-    
+
     elif filter_type == 'crown':
-        # 왕관 필터 (머리 위)
         forehead = face_landmarks.landmark[10]
         fx, fy = int(forehead.x * w), int(forehead.y * h)
-        crown_width = int(eye_dist * size_ratio)
-        
         if crown_img is not None:
-            # 실제 이미지 사용
-            scale_factor = crown_width / crown_img.shape[1]
-            crown_height = int(crown_img.shape[0] * scale_factor)
-            filter_img = cv2.resize(crown_img.copy(), (crown_width, crown_height))
-        else:
-            # 코드로 생성
-            crown_height = int(crown_width * height_ratio)
-            filter_img = create_crown_filter(crown_width, crown_height)
+            scale = target_width / crown_img.shape[1]
+            filter_img = cv2.resize(crown_img.copy(), (target_width, int(crown_img.shape[0] * scale)))
+        else: filter_img = create_crown_filter(target_width, int(target_width * height_ratio))
+        center_x = fx - target_width // 2 + offset_x
+        center_y = fy - filter_img.shape[0] + offset_y
+
+    if filter_img is not None:
+        M = cv2.getRotationMatrix2D((filter_img.shape[1]//2, filter_img.shape[0]//2), -angle, 1)
+        rotated = cv2.warpAffine(filter_img, M, (filter_img.shape[1], filter_img.shape[0]))
+        if rotated.shape[2] == 4 and ALPHA_SCALE != 1.0:
+            rotated[:, :, 3] = np.clip(rotated[:, :, 3] * ALPHA_SCALE, 0, 255)
+        image = overlay_transparent(image, rotated, center_x, center_y)
         
-        M = cv2.getRotationMatrix2D((crown_width//2, crown_height//2), -angle, 1)
-        rotated_filter = cv2.warpAffine(filter_img, M, (crown_width, crown_height))
-        if rotated_filter.shape[2] == 4 and ALPHA_SCALE != 1.0:
-            rotated_filter[:, :, 3] = np.clip(rotated_filter[:, :, 3] * ALPHA_SCALE, 0, 255)
+    return image
+
+def apply_filters(image, face_landmarks, filters, h, w):
+    for f in filters: image = apply_filter(image, face_landmarks, f, h, w)
+    return image
+
+def save_screenshot(image, filter_name):
+    try:
+        if not os.path.exists(SCREENSHOT_DIR): os.makedirs(SCREENSHOT_DIR)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = os.path.join(SCREENSHOT_DIR, f"screenshot_{filter_name}_{timestamp}.{SCREENSHOT_FMT}")
+        params = [cv2.IMWRITE_JPEG_QUALITY, SCREENSHOT_QUALITY] if SCREENSHOT_FMT in ('jpg','jpeg') else []
+        if cv2.imwrite(filename, image, params): return filename
+    except: pass
+    return None
+
+# --- [UX 개선: 하단 인벤토리 UI 그리기] ---
+def draw_ui(image, h, w):
+    # 하단 반투명 바 (높이 증가: 80 -> 100)
+    overlay = image.copy()
+    bar_height = 100
+    cv2.rectangle(overlay, (0, h - bar_height), (w, h), (0, 0, 0), -1)
+    image = cv2.addWeighted(overlay, 0.6, image, 0.4, 0)
+    
+    # 아이템 간격 계산
+    item_count = len(FILTER_ITEMS)
+    spacing = w // (item_count + 1)
+    
+    for i, (item_key, label) in enumerate(zip(FILTER_ITEMS, FILTER_LABELS)):
+        x_pos = spacing * (i + 1)
+        # 아이템 위치 조금 위로 조정
+        y_pos = h - bar_height // 2 - 5
         
-        center_x = fx - crown_width // 2 + offset_x
-        center_y = fy - crown_height + offset_y
-        image = overlay_transparent(image, rotated_filter, center_x, center_y)
+        # 1. 커서 표시 (선택된 아이템 강조)
+        if i == current_cursor_index:
+            # 커서 박스
+            box_w, box_h = 100, 60
+            cv2.rectangle(image, (x_pos - box_w//2, y_pos - box_h//2), 
+                         (x_pos + box_w//2, y_pos + box_h//2), (255, 255, 0), 2)
+            
+        # 2. 활성 상태 표시 (착용 중인 아이템)
+        is_active = item_key in active_filters
+        text_color = (0, 255, 0) if is_active else (150, 150, 150) # 착용:초록, 미착용:회색
+        
+        # 텍스트 그리기 (중앙 정렬)
+        image = put_korean_text(image, label, (x_pos, y_pos - 15), 
+                               font_size=24, color=text_color, align='center')
+        
+        # ON/OFF 상태 텍스트
+        status_text = "ON" if is_active else "OFF"
+        status_color = (0, 255, 0) if is_active else (100, 100, 100)
+        image = put_korean_text(image, status_text, (x_pos, y_pos + 20),
+                               font_size=16, color=status_color, align='center')
+
+    # 상단 정보 표시 (배경 모드 등)
+    top_info = f"배경: {BACKGROUND_MODES[background_mode]}"
+    image = put_korean_text(image, top_info, (20, 20), font_size=20, color=(255, 255, 255))
+    
+    # 조작 가이드 (위치 상향 조정)
+    guide = "이동:[A/D]  선택:[SPACE]  배경:[TAB]  크기:[+/-]  투명도:[ [/] ]  촬영:[S]  녹화:[R]"
+    image = put_korean_text(image, guide, (w//2, h - 25), font_size=16, color=(200, 200, 200), align='center')
     
     return image
 
-# --- [6-1. 다중 필터 적용 함수] ---
-def apply_filters(image, face_landmarks, filters, h, w):
-    """여러 필터를 순차적으로 적용"""
-    if not filters:
-        return image
-    for f in filters:
-        image = apply_filter(image, face_landmarks, f, h, w)
-    return image
-
-# --- [7. 스크린샷 저장 함수] ---
-def save_screenshot(image, filter_name='none'):
-    """현재 화면을 이미지 파일로 저장"""
-    try:
-        # 저장 폴더 설정
-        save_dir = SCREENSHOT_DIR
-        if not os.path.exists(save_dir):
-            os.makedirs(save_dir)
-        
-        # 파일명 생성 (타임스탬프 + 필터명)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        basename = f"screenshot_{filter_name}_{timestamp}"
-        ext = SCREENSHOT_FMT.lower()
-        filename = os.path.join(save_dir, f"{basename}.{ext}")
-        
-        # 이미지 저장 옵션
-        params = []
-        if ext in ("jpg", "jpeg"):
-            params = [cv2.IMWRITE_JPEG_QUALITY, SCREENSHOT_QUALITY]
-        elif ext == "png":
-            # PNG 압축레벨 0~9 (낮을수록 빠르고 용량 큼)
-            params = [cv2.IMWRITE_PNG_COMPRESSION, 3]
-        
-        success = cv2.imwrite(filename, image, params) if params else cv2.imwrite(filename, image)
-        return filename if success else None
-    except Exception:
-        return None
-
-# --- [8. 메인 실행 루프] ---
+# --- [8. 메인 실행] ---
 cap = cv2.VideoCapture(0)
+cv2.namedWindow('AR Filter Project', cv2.WINDOW_NORMAL)
+cv2.resizeWindow('AR Filter Project', 1280, 720)
 
-# 창 크기 조절 가능하도록 설정
-cv2.namedWindow('AR Filter Project - Sejoong', cv2.WINDOW_NORMAL)
-# 기본 시작 크기 (필요 시 조정)
-cv2.resizeWindow('AR Filter Project - Sejoong', 1280, 720)
-
-# 화면 메시지 관리
 status_message = ""
 message_timer = 0
-MESSAGE_DISPLAY_TIME = 60  # 프레임 수 (약 1초, 60fps 기준)
-
-# 녹화 상태 관리
-video_writer = None
 recording = False
-
-print("\n=== AR Face Filter Started ===")
-print("프로그램이 시작되었습니다.\n")
+video_writer = None
 
 while cap.isOpened():
     success, image = cap.read()
-    if not success:
-        print("카메라를 찾을 수 없습니다.")
-        break
+    if not success: break
 
-    # 성능 최적화: 이미지 쓰기 금지 후 처리
     image.flags.writeable = False
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     results = face_mesh.process(image)
-
-    # 그리기 위해 다시 쓰기 허용
     image.flags.writeable = True
     image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-
-    # 현재 프레임 크기 (얼굴 감지 유무와 관계없이 사용)
+    
+    if background_mode != 0: image = apply_background(image, background_mode)
+    
     h, w, c = image.shape
-
+    
     if results.multi_face_landmarks:
         for face_landmarks in results.multi_face_landmarks:
-            # --- [필터 적용] ---
             image = apply_filters(image, face_landmarks, active_filters, h, w)
-            
-            # --- [입 벌림 감지] ---
-            top_lip = face_landmarks.landmark[13]
-            bottom_lip = face_landmarks.landmark[14]
-            lip_dist = int(abs(top_lip.y - bottom_lip.y) * h)
-            
-            if lip_dist > 40:
+            # 입 벌림 효과
+            top_y = face_landmarks.landmark[13].y
+            bot_y = face_landmarks.landmark[14].y
+            if int(abs(top_y - bot_y) * h) > 40:
                 cv2.putText(image, "Wow!", (50, 150), cv2.FONT_HERSHEY_SIMPLEX, 3, (0, 0, 255), 5)
-                # 얼굴 주변에 박스 표시
-                left_eye = face_landmarks.landmark[33]
-                right_eye = face_landmarks.landmark[263]
-                lx, ly = int(left_eye.x * w), int(left_eye.y * h)
-                rx, ry = int(right_eye.x * w), int(right_eye.y * h)
-                face_top = int(face_landmarks.landmark[10].y * h)
-                face_bot = int(face_landmarks.landmark[152].y * h)
-                cv2.rectangle(image, (lx-50, face_top-50), (rx+50, face_bot+50), (0, 255, 255), 3)
-    
-    # --- [화면에 현재 필터 표시] ---
-    if active_filters:
-        active_names = [filter_names.get(f, f) for f in active_filters]
-        filter_text = f"현재 필터: {', '.join(active_names)}"
-    else:
-        filter_text = "현재 필터: 없음"
-    image = put_korean_text(image, filter_text, (10, 10), font_size=24, color=(0, 255, 0))
 
-    # 안전한 영역에 자막 배치 (아래에서 위로 5줄)
-    y_controls1 = max(20, h - 25)
-    y_controls2 = max(20, h - 50)
-    y_sizealpha = max(20, h - 75)
-    y_ss = max(20, h - 100)
-    y_status = max(20, h - 125)
-
-    # 단축키 안내 (두 줄로 분리)
-    image = put_korean_text(
-        image,
-        "[1]안경 [2]모자 [3]수염 [4]왕관 [0]모두해제",
-        (10, y_controls1),
-        font_size=18,
-        color=(255, 255, 255),
-    )
-    image = put_korean_text(
-        image,
-        "[+/-]크기 [ [/] ]알파 [s]스크린샷 [r]녹화 [q]종료",
-        (10, y_controls2),
-        font_size=18,
-        color=(255, 255, 255),
-    )
-    # 크기/투명도 현재값 표시
-    size_alpha_text = f"크기배율: {SIZE_SCALE:.1f} | 알파배율: {ALPHA_SCALE:.1f}"
-    image = put_korean_text(image, size_alpha_text, (10, y_sizealpha), font_size=18, color=(0, 200, 255))
-    # 스크린샷 설정 표시
-    ss_text = (
-        f"저장: {SCREENSHOT_DIR}/screenshot_*.{SCREENSHOT_FMT} | 품질: {SCREENSHOT_QUALITY}"
-        if SCREENSHOT_FMT.lower() in ('jpg','jpeg')
-        else f"저장: {SCREENSHOT_DIR}/screenshot_*.{SCREENSHOT_FMT}"
-    )
-    image = put_korean_text(image, ss_text, (10, y_ss), font_size=16, color=(180, 255, 180))
-    # 녹화 상태 표시
-    if recording:
-        rec_text = "● REC"
-        image = put_korean_text(image, rec_text, (10, 50), font_size=24, color=(0, 0, 255))
+    # UI 그리기
+    image = draw_ui(image, h, w)
     
-    # --- [상태 메시지 표시] ---
+    # 상태 메시지
     if status_message and message_timer > 0:
-        # 메시지 표시 (텍스트만)
-        image = put_korean_text(image, status_message, (10, y_status), font_size=20, color=(0, 255, 0))
+        image = put_korean_text(image, status_message, (w//2, h//2), font_size=40, color=(0, 255, 255), align='center')
         message_timer -= 1
+        
+    if recording:
+        # 녹화 표시 위치 우측 상단으로 변경
+        cv2.circle(image, (w - 100, 40), 10, (0, 0, 255), -1)
+        image = put_korean_text(image, "REC", (w - 70, 30), font_size=20, color=(0, 0, 255))
+        if video_writer: video_writer.write(image)
 
-    # 화면 출력
-    cv2.imshow('AR Filter Project - Sejoong', image)
-
-    # 녹화 중이면 프레임 저장
-    if recording and video_writer is not None:
-        video_writer.write(image)
-
-    # 키보드 입력 처리
+    cv2.imshow('AR Filter Project', image)
+    
     key = cv2.waitKey(5) & 0xFF
-    if key == ord('q'):
-        break
+    if key == ord('q'): break
+    
+    # --- [UX 조작 키 매핑] ---
+    elif key == ord('a') or key == ord('A'): # 왼쪽 이동
+        current_cursor_index = (current_cursor_index - 1) % len(FILTER_ITEMS)
+    elif key == ord('d') or key == ord('D'): # 오른쪽 이동
+        current_cursor_index = (current_cursor_index + 1) % len(FILTER_ITEMS)
+    elif key == ord(' '): # 스페이스바: 선택/해제
+        selected_item = FILTER_ITEMS[current_cursor_index]
+        if selected_item in active_filters:
+            active_filters.remove(selected_item)
+            status_message = "OFF"
+        else:
+            active_filters.append(selected_item)
+            status_message = "ON"
+        message_timer = 20
+    
+    elif key == 9: # Tab 키: 배경 변경
+        background_mode = (background_mode + 1) % len(BACKGROUND_MODES)
+        status_message = f"배경: {BACKGROUND_MODES[background_mode]}"
+        message_timer = 30
+        
+    # 기존 기능 키들
     elif key == ord('s') or key == ord('S'):
-        # 스크린샷 저장
-        filter_label = "none" if not active_filters else "_".join(active_filters)
-        saved_path = save_screenshot(image, filter_label)
-        if saved_path:
-            status_message = f"📸 저장 완료: {os.path.basename(saved_path)}"
-            message_timer = MESSAGE_DISPLAY_TIME
-        else:
-            status_message = "❌ 스크린샷 저장 실패"
-            message_timer = MESSAGE_DISPLAY_TIME
-    elif key == ord('1'):
-        if 'glasses' in active_filters:
-            active_filters.remove('glasses')
-        else:
-            active_filters.append('glasses')
-        status_message = "✅ 필터 토글: 안경"
-        message_timer = MESSAGE_DISPLAY_TIME
-    elif key == ord('2'):
-        if 'hat' in active_filters:
-            active_filters.remove('hat')
-        else:
-            active_filters.append('hat')
-        status_message = "✅ 필터 토글: 모자"
-        message_timer = MESSAGE_DISPLAY_TIME
-    elif key == ord('3'):
-        if 'mustache' in active_filters:
-            active_filters.remove('mustache')
-        else:
-            active_filters.append('mustache')
-        status_message = "✅ 필터 토글: 수염"
-        message_timer = MESSAGE_DISPLAY_TIME
-    elif key == ord('4'):
-        if 'crown' in active_filters:
-            active_filters.remove('crown')
-        else:
-            active_filters.append('crown')
-        status_message = "✅ 필터 토글: 왕관"
-        message_timer = MESSAGE_DISPLAY_TIME
-    elif key == ord('0'):
-        active_filters = []
-        status_message = "✅ 필터 모두 해제"
-        message_timer = MESSAGE_DISPLAY_TIME
-    elif key in (ord('+'), ord('=')):  # 크기 증가
-        SIZE_SCALE = min(SIZE_MAX, round(SIZE_SCALE + SIZE_STEP, 2))
-        status_message = f"🔍 크기배율: {SIZE_SCALE:.1f}"
-        message_timer = MESSAGE_DISPLAY_TIME
-    elif key in (ord('-'), ord('_')):  # 크기 감소
-        SIZE_SCALE = max(SIZE_MIN, round(SIZE_SCALE - SIZE_STEP, 2))
-        status_message = f"🔍 크기배율: {SIZE_SCALE:.1f}"
-        message_timer = MESSAGE_DISPLAY_TIME
-    elif key == ord('['):  # 알파 감소
-        ALPHA_SCALE = max(ALPHA_MIN, round(ALPHA_SCALE - ALPHA_STEP, 2))
-        status_message = f"✨ 알파배율: {ALPHA_SCALE:.1f}"
-        message_timer = MESSAGE_DISPLAY_TIME
-    elif key == ord(']'):  # 알파 증가
-        ALPHA_SCALE = min(ALPHA_MAX, round(ALPHA_SCALE + ALPHA_STEP, 2))
-        status_message = f"✨ 알파배율: {ALPHA_SCALE:.1f}"
-        message_timer = MESSAGE_DISPLAY_TIME
+        f_name = "_".join(active_filters) if active_filters else "none"
+        if save_screenshot(image, f_name):
+            status_message = "저장 완료!"
+            message_timer = 30
     elif key == ord('r') or key == ord('R'):
         if not recording:
-            # 녹화 시작
-            if not os.path.exists(RECORD_DIR):
-                os.makedirs(RECORD_DIR)
-            filter_label = "none" if not active_filters else "_".join(active_filters)
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = os.path.join(RECORD_DIR, f"record_{filter_label}_{timestamp}.mp4")
-            fourcc = cv2.VideoWriter_fourcc(*RECORD_CODEC)
-            fps = cap.get(cv2.CAP_PROP_FPS)
-            fps = fps if fps and fps > 1 else RECORD_FPS_FALLBACK
-            video_writer = cv2.VideoWriter(filename, fourcc, fps, (w, h))
-            if video_writer.isOpened():
-                recording = True
-                status_message = f"🔴 녹화 시작: {os.path.basename(filename)}"
-            else:
-                video_writer = None
-                recording = False
-                status_message = "❌ 녹화 시작 실패"
-            message_timer = MESSAGE_DISPLAY_TIME
+            if not os.path.exists(RECORD_DIR): os.makedirs(RECORD_DIR)
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            fn = os.path.join(RECORD_DIR, f"rec_{ts}.mp4")
+            video_writer = cv2.VideoWriter(fn, cv2.VideoWriter_fourcc(*RECORD_CODEC), 30, (w, h))
+            recording = True
+            status_message = "녹화 시작"
         else:
-            # 녹화 종료
             recording = False
-            if video_writer:
-                video_writer.release()
-                video_writer = None
-            status_message = "⏹️ 녹화 종료"
-            message_timer = MESSAGE_DISPLAY_TIME
+            if video_writer: video_writer.release()
+            video_writer = None
+            status_message = "녹화 저장됨"
+        message_timer = 30
+    elif key == ord('0'):
+        active_filters = []
+        background_mode = 0
+        status_message = "초기화"
+        message_timer = 30
+    elif key in (ord('+'), ord('=')): SIZE_SCALE = min(SIZE_MAX, SIZE_SCALE + SIZE_STEP)
+    elif key in (ord('-'), ord('_')): SIZE_SCALE = max(SIZE_MIN, SIZE_SCALE - SIZE_STEP)
+    elif key == ord(']'): ALPHA_SCALE = min(ALPHA_MAX, ALPHA_SCALE + ALPHA_STEP)
+    elif key == ord('['): ALPHA_SCALE = max(ALPHA_MIN, ALPHA_SCALE - ALPHA_STEP)
 
 cap.release()
-if video_writer:
-    video_writer.release()
+if video_writer: video_writer.release()
 cv2.destroyAllWindows()
