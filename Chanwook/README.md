@@ -1,9 +1,9 @@
-# Lee ChanWook (202033757)
+# Lee Chanwook (202033757)
 
 
 
 
-# Tree Segmentation (벚꽃 나무 세그멘테이션)
+## Tree Segmentation (벚꽃 나무 세그멘테이션)
 
 간단한 이미지 세그멘테이션을 통해 나무/꽃 영역만 컬러로 남기고 배경을 흑백으로 만드는 프로젝트입니다.
 
