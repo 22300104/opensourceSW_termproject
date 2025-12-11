@@ -1,95 +1,94 @@
-# AR Face Filter Project
+# Open Source Software Term Project
 
-## 👥 Team Members
-*   **Kim Sejung (201935020)** - AR Face Filter & Gesture Control
-*   *(Other Team Member Name)* - *(Role/Project)*
-*   *(Other Team Member Name)* - *(Role/Project)*
+This repository contains individual term projects developed by 4 team members. Each member created a unique AR application using Python and OpenCV.
 
 ---
 
-## 👤 Kim Sejung (201935020)
+## 1. Kim Sejung (201935020)
+### 📂 Project Location: `Sejung/`
 
-### 1. Project Overview
-This module is a real-time Augmented Reality (AR) application developed using Python, OpenCV, and MediaPipe. The system detects faces and hands through a webcam to apply dynamic digital filters and enable touchless interaction. It demonstrates advanced computer vision techniques including face mesh mapping, selfie segmentation, and hand gesture recognition.
+### Project Overview
+**"AR Face Filter & Gesture Control"**
+A real-time AR application that applies dynamic face filters and allows users to control the interface using hand gestures. It features advanced effects like face distortion and interactive particles.
 
-### 2. Demo Video
+### Demo Video
 <video src="Sejung/videos/rec_20251211_123859.mp4" width="640" controls></video>
+*(Video path: `Sejung/videos/rec_20251211_123859.mp4`)*
 
-*(If the video does not play, please check the `Sejung/videos/rec_20251211_123859.mp4` file directly.)*
+### Key Features
+*   **Face Distortion (Big Eyes)**: Real-time mesh warping.
+*   **Face Painting (Joker)**: Texture mapping on face mesh.
+*   **Particle System**: Fire effects triggered by mouth opening.
+*   **Gesture Control**: V-sign (Screenshot), Palm (Navigate), Fist (Select).
+*   **Virtual Background**: Real-time background replacement.
 
-### 3. Key Features
-**Advanced Face Filters**
-*   **Face Distortion**: Real-time mesh manipulation (e.g., Big Eyes effect) using localized warping algorithms.
-*   **Face Painting**: Texture mapping that adheres to facial contours (e.g., Joker makeup) using polygon rendering on face landmarks.
-*   **Particle Systems**: Dynamic physics-based particles triggered by facial expressions (e.g., fire effects when opening the mouth).
-*   **2D Accessories**: Overlay of graphical elements (glasses, hats, crowns) aligned with specific facial landmarks.
-
-**Gesture Control Interface**
-*   **V-Sign**: Capture screenshot.
-*   **Open Palm**: Navigate through filter options.
-*   **Fist**: Toggle the selected filter on/off.
-*   **Index Finger**: Cycle through virtual backgrounds.
-
-**Virtual Backgrounds**
-*   Real-time subject segmentation to replace the background with blur effects, solid colors, or dynamic patterns.
-
-### 4. Installation & Usage (Sejung)
-
-1.  **Move to directory**:
-    ```bash
-    cd Sejung
-    ```
-
-2.  **Run the application**:
-    ```bash
-    python main.py
-    ```
-
-### 5. Control Guide
-| Input Method | Action | Function |
-| :--- | :--- | :--- |
-| **Keyboard** | `A` / `D` | Navigate filter menu (Left/Right) |
-| | `Space` | Toggle selected filter |
-| | `Tab` | Change virtual background |
-| | `S` | Save screenshot |
-| | `R` | Start/Stop video recording |
-| **Gestures** | **V-Sign** | Take screenshot |
-| | **Palm** | Navigate menu |
-| | **Fist** | Select/Deselect item |
-| | **Index Point** | Change background |
+### How to Run
+```bash
+cd Sejung
+python main.py
+```
 
 ---
 
-## 👤 (Next Team Member Name)
-*(Placeholder for next member's project description)*
+## 2. Chanwook (Name & ID)
+### 📂 Project Location: `Chanwook/`
+
+### Project Overview
+*(Description of Chanwook's project)*
+
+### Key Features
+*   *(Feature 1)*
+*   *(Feature 2)*
+
+### How to Run
+```bash
+cd Chanwook
+# python main.py (Example)
+```
 
 ---
 
-## Requirements
-The project requires **Python 3.8** or higher.
-The following packages are necessary for execution:
+## 3. Jiwoong (Name & ID)
+### 📂 Project Location: `Jiwoong/`
 
-*   `opencv-python` (>= 4.5.0)
-*   `mediapipe` (>= 0.8.9)
-*   `numpy` (>= 1.19.0)
-*   `pillow` (>= 8.0.0)
+### Project Overview
+*(Description of Jiwoong's project)*
 
-## Installation
+### Key Features
+*   *(Feature 1)*
+*   *(Feature 2)*
 
-1.  Clone the repository:
-    ```bash
-    git clone https://github.com/[your-repository-url].git
-    ```
-
-2.  Install the required dependencies:
-    ```bash
-    pip install opencv-python mediapipe numpy pillow
-    ```
-
-## References
-*   [Google MediaPipe Solutions](https://developers.google.com/mediapipe/solutions) - Used for Face Mesh, Hands, and Selfie Segmentation.
-*   [OpenCV Documentation](https://docs.opencv.org/) - Used for image processing and computer vision tasks.
-*   [NumPy Documentation](https://numpy.org/doc/) - Used for matrix operations and geometric calculations.
+### How to Run
+```bash
+cd Jiwoong
+# python main.py (Example)
+```
 
 ---
-*This project was developed for educational purposes to demonstrate the capabilities of computer vision libraries.*
+
+## 4. Joonkyo (Name & ID)
+### 📂 Project Location: `Joonkyo/`
+
+### Project Overview
+*(Description of Joonkyo's project)*
+
+### Key Features
+*   *(Feature 1)*
+*   *(Feature 2)*
+
+### How to Run
+```bash
+cd Joonkyo
+# python main.py (Example)
+```
+
+---
+
+## 🛠 Common Requirements
+All projects in this repository require the following environment:
+*   Python 3.8+
+*   `opencv-python`, `mediapipe`, `numpy`, `pillow`
+
+```bash
+pip install opencv-python mediapipe numpy pillow
+```
