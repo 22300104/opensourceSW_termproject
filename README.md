@@ -1,28 +1,69 @@
 # AR Face Filter Project
 
-## Project Overview
-This project is a real-time Augmented Reality (AR) application developed using Python, OpenCV, and MediaPipe. The system detects faces and hands through a webcam to apply dynamic digital filters and enable touchless interaction. It demonstrates advanced computer vision techniques including face mesh mapping, selfie segmentation, and hand gesture recognition.
+## 👥 Team Members
+*   **Kim Sejung (201935020)** - AR Face Filter & Gesture Control
+*   *(Other Team Member Name)* - *(Role/Project)*
+*   *(Other Team Member Name)* - *(Role/Project)*
 
-The application allows users to apply various effects such as 3D accessories, face distortion, face painting, and particle systems. It also features a virtual background replacement system and a gesture-based control interface, providing an immersive and interactive user experience.
+---
 
-## Demo
-*(Insert demo screenshots or GIFs here)*
+## 👤 Kim Sejung (201935020)
 
-### Key Features
-1.  **Advanced Face Filters**
-    *   **Face Distortion**: Real-time mesh manipulation (e.g., Big Eyes effect) using localized warping algorithms.
-    *   **Face Painting**: Texture mapping that adheres to facial contours (e.g., Joker makeup) using polygon rendering on face landmarks.
-    *   **Particle Systems**: Dynamic physics-based particles triggered by facial expressions (e.g., fire effects when opening the mouth).
-    *   **2D Accessories**: Overlay of graphical elements (glasses, hats, crowns) aligned with specific facial landmarks.
+### 1. Project Overview
+This module is a real-time Augmented Reality (AR) application developed using Python, OpenCV, and MediaPipe. The system detects faces and hands through a webcam to apply dynamic digital filters and enable touchless interaction. It demonstrates advanced computer vision techniques including face mesh mapping, selfie segmentation, and hand gesture recognition.
 
-2.  **Gesture Control Interface**
-    *   **V-Sign**: Capture screenshot.
-    *   **Open Palm**: Navigate through filter options.
-    *   **Fist**: Toggle the selected filter on/off.
-    *   **Index Finger**: Cycle through virtual backgrounds.
+### 2. Demo Video
+<video src="Sejung/videos/rec_20251211_123859.mp4" width="640" controls></video>
 
-3.  **Virtual Backgrounds**
-    *   Real-time subject segmentation to replace the background with blur effects, solid colors, or dynamic patterns.
+*(If the video does not play, please check the `Sejung/videos/rec_20251211_123859.mp4` file directly.)*
+
+### 3. Key Features
+**Advanced Face Filters**
+*   **Face Distortion**: Real-time mesh manipulation (e.g., Big Eyes effect) using localized warping algorithms.
+*   **Face Painting**: Texture mapping that adheres to facial contours (e.g., Joker makeup) using polygon rendering on face landmarks.
+*   **Particle Systems**: Dynamic physics-based particles triggered by facial expressions (e.g., fire effects when opening the mouth).
+*   **2D Accessories**: Overlay of graphical elements (glasses, hats, crowns) aligned with specific facial landmarks.
+
+**Gesture Control Interface**
+*   **V-Sign**: Capture screenshot.
+*   **Open Palm**: Navigate through filter options.
+*   **Fist**: Toggle the selected filter on/off.
+*   **Index Finger**: Cycle through virtual backgrounds.
+
+**Virtual Backgrounds**
+*   Real-time subject segmentation to replace the background with blur effects, solid colors, or dynamic patterns.
+
+### 4. Installation & Usage (Sejung)
+
+1.  **Move to directory**:
+    ```bash
+    cd Sejung
+    ```
+
+2.  **Run the application**:
+    ```bash
+    python main.py
+    ```
+
+### 5. Control Guide
+| Input Method | Action | Function |
+| :--- | :--- | :--- |
+| **Keyboard** | `A` / `D` | Navigate filter menu (Left/Right) |
+| | `Space` | Toggle selected filter |
+| | `Tab` | Change virtual background |
+| | `S` | Save screenshot |
+| | `R` | Start/Stop video recording |
+| **Gestures** | **V-Sign** | Take screenshot |
+| | **Palm** | Navigate menu |
+| | **Fist** | Select/Deselect item |
+| | **Index Point** | Change background |
+
+---
+
+## 👤 (Next Team Member Name)
+*(Placeholder for next member's project description)*
+
+---
 
 ## Requirements
 The project requires **Python 3.8** or higher.
