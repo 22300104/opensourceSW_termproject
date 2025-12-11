@@ -1,6 +1,6 @@
-# AR Face Filter Project 
-### 👤 Kim Sejung (201935020)
 
+# 👤 Kim Sejung (201935020)
+## AR Face Filter Project 
 ## 1. 프로젝트 개요 (Project Overview)
 This project is a real-time Augmented Reality (AR) application developed using **Python**, **OpenCV**, and **MediaPipe**. The system detects faces and hands through a webcam to apply dynamic digital filters and enable touchless interaction. 
 
@@ -11,7 +11,7 @@ It goes beyond simple overlays by implementing advanced computer vision techniqu
 *   **Hand Gesture Recognition** (Touchless UI control)
 
 ## 2. 데모 영상 (Demo)
-<video src="Sejung/videos/rec_20251211_123859.mp4" width="100%" controls></video>
+![Image](https://github.com/user-attachments/assets/10d6c7d4-c046-4be0-a0cb-222b92caea99)
 
 > *Note: If the video above does not play, please check the file at `Sejung/videos/rec_20251211_123859.mp4`.*
 
