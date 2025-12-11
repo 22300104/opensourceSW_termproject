@@ -1,3 +1,7 @@
+# 201935088 윤지웅
+
+---
+
 # Pyramid vs Direct Blending (OpenCV)
 
 이 프로젝트는 Gaussian Pyramid와 Laplacian Pyramid를 이용한 이미지 블렌딩(Pyramid blending)과  
