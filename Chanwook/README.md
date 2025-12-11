@@ -1,3 +1,8 @@
+# Lee ChanWook (202033757)
+
+
+
+
 # Tree Segmentation (벚꽃 나무 세그멘테이션)
 
 간단한 이미지 세그멘테이션을 통해 나무/꽃 영역만 컬러로 남기고 배경을 흑백으로 만드는 프로젝트입니다.
@@ -58,7 +63,7 @@ pip install -r requirements.txt
 위 명령 한 줄로 필요한 패키지를 한 번에 설치할 수 있습니다.
 
 
-### 4. 실행 방법
+## 4. 실행 방법
 
 프로젝트 루트에서 아래 명령을 실행하세요:
 
@@ -67,7 +72,7 @@ pip install -r requirements.txt
 python main.py
 ```
 
-### 5. 참고 자료
+## 5. 참고 자료
 
 OpenCV 공식 문서 – Image Processing, Color Spaces, Thresholding
 
