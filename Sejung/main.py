@@ -6,6 +6,8 @@ import sys
 from PIL import Image, ImageDraw, ImageFont
 from datetime import datetime
 
+import random
+
 # --- [1. 설정 및 초기화] ---
 mp_face_mesh = mp.solutions.face_mesh
 face_mesh = mp_face_mesh.FaceMesh(
@@ -14,6 +16,50 @@ face_mesh = mp_face_mesh.FaceMesh(
     min_detection_confidence=0.5,
     min_tracking_confidence=0.5
 )
+
+class ParticleSystem:
+    def __init__(self):
+        self.particles = []
+        
+    def emit(self, x, y):
+        # 파티클 속성: [x, y, vx, vy, life, color, size]
+        for _ in range(5): # 한 번에 5개 생성
+            vx = random.uniform(-5, 5)
+            vy = random.uniform(-15, -5) # 위로 솟구침
+            life = random.randint(20, 40)
+            color = (random.randint(0, 255), random.randint(100, 255), 255) # 주황~노랑 불꽃색 (BGR)
+            size = random.randint(3, 8)
+            self.particles.append([x, y, vx, vy, life, color, size])
+            
+    def update_and_draw(self, img):
+        if not self.particles: return img
+        
+        h, w = img.shape[:2]
+        new_particles = []
+        
+        # 반투명 레이어 (잔상 효과)
+        overlay = img.copy()
+        
+        for p in self.particles:
+            x, y, vx, vy, life, color, size = p
+            
+            # 물리 업데이트
+            x += vx
+            y += vy
+            vy += 0.5 # 중력
+            life -= 1
+            
+            # 화면 밖 체크
+            if life > 0 and 0 <= x < w and 0 <= y < h:
+                # 그리기
+                alpha = min(1.0, life / 20.0)
+                cv2.circle(overlay, (int(x), int(y)), size, color, -1)
+                new_particles.append([x, y, vx, vy, life, color, size])
+                
+        self.particles = new_particles
+        return cv2.addWeighted(overlay, 0.7, img, 0.3, 0)
+
+particle_system = ParticleSystem()
 
 # [가상 배경] 세그멘테이션 초기화
 mp_selfie_segmentation = mp.solutions.selfie_segmentation
@@ -71,6 +117,91 @@ def create_crown_filter(width, height):
     cv2.circle(img, (width//4, height//3), 4, (0, 255, 0, 255), -1)
     cv2.circle(img, (3*width//4, height//3), 4, (0, 0, 255, 255), -1)
     return img
+
+def create_joker_mask(width, height):
+    """조커 분장 마스크 생성 (입술, 눈 화장)"""
+    img = np.zeros((height, width, 4), dtype=np.uint8)
+    # 입술 (빨간색, 찢어진 입)
+    pts_mouth = np.array([
+        [width//2, height//2 + 20], [width//2 - 60, height//2], [width//2, height//2 - 10], [width//2 + 60, height//2]
+    ], np.int32)
+    cv2.fillPoly(img, [pts_mouth], (0, 0, 200, 200)) # BGR
+    # 눈 (파란색 다이아몬드)
+    cv2.fillPoly(img, [np.array([[width//3, height//3], [width//3-15, height//3+30], [width//3, height//3+60], [width//3+15, height//3+30]], np.int32)], (200, 0, 0, 200))
+    cv2.fillPoly(img, [np.array([[2*width//3, height//3], [2*width//3-15, height//3+30], [2*width//3, height//3+60], [2*width//3+15, height//3+30]], np.int32)], (200, 0, 0, 200))
+    return img
+
+def apply_face_paint(image, landmarks, h, w):
+    """얼굴 랜드마크 기반 페이스 페인팅"""
+    mask = np.zeros_like(image)
+    
+    # 1. 입술 (빨간색)
+    mouth_indices = [61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291, 308, 324, 318, 402, 317, 14, 87, 178, 88, 95, 185, 40, 39, 37, 0, 267, 269, 270, 409, 291]
+    mouth_points = []
+    for idx in mouth_indices:
+        pt = landmarks.landmark[idx]
+        mouth_points.append((int(pt.x * w), int(pt.y * h)))
+    
+    if mouth_points:
+        cv2.fillPoly(mask, [np.array(mouth_points)], (0, 0, 200)) # 빨간색
+        
+        # 입꼬리 (조커처럼 길게)
+        left_corner = mouth_points[0]
+        right_corner = mouth_points[10] # 대략적인 오른쪽 끝
+        cv2.line(mask, left_corner, (left_corner[0]-40, left_corner[1]-20), (0, 0, 200), 15)
+        cv2.line(mask, right_corner, (right_corner[0]+40, right_corner[1]-20), (0, 0, 200), 15)
+
+    # 2. 눈 주변 (검은색)
+    left_eye_indices = [33, 246, 161, 160, 159, 158, 157, 173, 133, 155, 154, 153, 145, 144, 163, 7]
+    right_eye_indices = [362, 398, 384, 385, 386, 387, 388, 466, 263, 249, 390, 373, 374, 380, 381, 382]
+    
+    for indices in [left_eye_indices, right_eye_indices]:
+        points = []
+        for idx in indices:
+            pt = landmarks.landmark[idx]
+            points.append((int(pt.x * w), int(pt.y * h)))
+        if points:
+            # 눈두덩이까지 넓게 칠하기 위해 convex hull 사용 가능하지만 여기선 다각형 확장
+            pts = np.array(points)
+            # 중심점
+            M = cv2.moments(pts)
+            if M['m00'] != 0:
+                cx, cy = int(M['m10']/M['m00']), int(M['m01']/M['m00'])
+                # 스케일 키워서 그림 (팬더/조커 느낌)
+                scaled_pts = []
+                for px, py in points:
+                    scaled_pts.append((int(cx + (px-cx)*2.5), int(cy + (py-cy)*2.5)))
+                cv2.fillPoly(mask, [np.array(scaled_pts)], (30, 30, 30))
+
+    # 합성 (Overlay)
+    return cv2.addWeighted(image, 1.0, mask, 0.6, 0)
+
+def distort_region(image, cx, cy, radius, strength=0.5):
+    """영역 왜곡 (왕눈이 효과)"""
+    try:
+        h, w = image.shape[:2]
+        x1, x2 = max(0, cx - radius), min(w, cx + radius)
+        y1, y2 = max(0, cy - radius), min(h, cy + radius)
+        if x2 <= x1 or y2 <= y1: return image
+        
+        roi = image[y1:y2, x1:x2]
+        rh, rw = roi.shape[:2]
+        grid_y, grid_x = np.indices((rh, rw), dtype=np.float32)
+        
+        rel_cx, rel_cy = cx - x1, cy - y1
+        r = np.sqrt((grid_x - rel_cx)**2 + (grid_y - rel_cy)**2)
+        mask = r < radius
+        
+        map_x, map_y = grid_x.copy(), grid_y.copy()
+        factor = 1.0 - strength * (1.0 - r[mask] / radius)
+        map_x[mask] = (grid_x[mask] - rel_cx) * factor + rel_cx
+        map_y[mask] = (grid_y[mask] - rel_cy) * factor + rel_cy
+        
+        distorted = cv2.remap(roi, map_x, map_y, cv2.INTER_LINEAR)
+        np.copyto(roi, distorted, where=np.stack((mask,)*3, axis=-1))
+        image[y1:y2, x1:x2] = roi
+    except: pass
+    return image
 
 # --- [3. 핵심 함수: 투명 이미지 합성] ---
 def overlay_transparent(background, overlay, x, y):
@@ -181,8 +312,8 @@ RECORD_CODEC = "mp4v"
 RECORD_FPS_FALLBACK = 30
 
 # --- [7. 상태 관리] ---
-FILTER_ITEMS = ['glasses', 'hat', 'mustache', 'crown']
-FILTER_LABELS = ['안경', '모자', '수염', '왕관']
+FILTER_ITEMS = ['glasses', 'hat', 'mustache', 'crown', 'big_eyes', 'joker']
+FILTER_LABELS = ['안경', '모자', '수염', '왕관', '왕눈이', '조커']
 current_cursor_index = 0
 active_filters = ['glasses']
 background_mode = 0
@@ -311,6 +442,23 @@ def apply_filter(image, face_landmarks, filter_type, h, w):
         center_x = fx - target_width // 2 + offset_x
         center_y = fy - filter_img.shape[0] + offset_y
 
+    elif filter_type == 'big_eyes':
+        le = face_landmarks.landmark[468] # 왼쪽 홍채
+        re = face_landmarks.landmark[473] # 오른쪽 홍채
+        lx, ly = int(le.x * w), int(le.y * h)
+        rx, ry = int(re.x * w), int(re.y * h)
+        
+        eye_dist = np.sqrt((lx-rx)**2 + (ly-ry)**2)
+        radius = int(eye_dist * 0.45 * SIZE_SCALE)
+        strength = 0.6 * ALPHA_SCALE
+        
+        image = distort_region(image, lx, ly, radius, strength)
+        image = distort_region(image, rx, ry, radius, strength)
+        return image
+
+    elif filter_type == 'joker':
+        return apply_face_paint(image, face_landmarks, h, w)
+
     if filter_img is not None:
         M = cv2.getRotationMatrix2D((filter_img.shape[1]//2, filter_img.shape[0]//2), -angle, 1)
         rotated = cv2.warpAffine(filter_img, M, (filter_img.shape[1], filter_img.shape[0]))
@@ -419,11 +567,21 @@ while cap.isOpened():
     if results_face.multi_face_landmarks:
         for face_landmarks in results_face.multi_face_landmarks:
             image = apply_filters(image, face_landmarks, active_filters, h, w)
-            # 입 벌림 효과
+            # 입 벌림 효과 (파티클)
             top_y = face_landmarks.landmark[13].y
             bot_y = face_landmarks.landmark[14].y
-            if int(abs(top_y - bot_y) * h) > 40:
-                cv2.putText(image, "Wow!", (50, 150), cv2.FONT_HERSHEY_SIMPLEX, 3, (0, 0, 255), 5)
+            mouth_open_dist = int(abs(top_y - bot_y) * h)
+            
+            if mouth_open_dist > 40:
+                lip_x = int(face_landmarks.landmark[13].x * w)
+                lip_y = int(face_landmarks.landmark[13].y * h)
+                particle_system.emit(lip_x, lip_y + 20) # 입 안쪽에서 생성
+                
+                # 기존 텍스트 효과는 유지하되 조금 작게
+                # cv2.putText(image, "Wow!", (50, 150), cv2.FONT_HERSHEY_SIMPLEX, 3, (0, 0, 255), 5)
+
+    # 파티클 업데이트 및 그리기 (얼굴 위에 그려지도록 여기서 호출)
+    image = particle_system.update_and_draw(image)
 
     # 제스처 처리
     if results_hands.multi_hand_landmarks:
