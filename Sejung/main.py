@@ -72,6 +72,33 @@ def create_crown_filter(width, height):
     cv2.circle(img, (3*width//4, height//3), 4, (0, 0, 255, 255), -1)
     return img
 
+def distort_region(image, cx, cy, radius, strength=0.5):
+    """영역 왜곡 (왕눈이 효과)"""
+    try:
+        h, w = image.shape[:2]
+        x1, x2 = max(0, cx - radius), min(w, cx + radius)
+        y1, y2 = max(0, cy - radius), min(h, cy + radius)
+        if x2 <= x1 or y2 <= y1: return image
+        
+        roi = image[y1:y2, x1:x2]
+        rh, rw = roi.shape[:2]
+        grid_y, grid_x = np.indices((rh, rw), dtype=np.float32)
+        
+        rel_cx, rel_cy = cx - x1, cy - y1
+        r = np.sqrt((grid_x - rel_cx)**2 + (grid_y - rel_cy)**2)
+        mask = r < radius
+        
+        map_x, map_y = grid_x.copy(), grid_y.copy()
+        factor = 1.0 - strength * (1.0 - r[mask] / radius)
+        map_x[mask] = (grid_x[mask] - rel_cx) * factor + rel_cx
+        map_y[mask] = (grid_y[mask] - rel_cy) * factor + rel_cy
+        
+        distorted = cv2.remap(roi, map_x, map_y, cv2.INTER_LINEAR)
+        np.copyto(roi, distorted, where=np.stack((mask,)*3, axis=-1))
+        image[y1:y2, x1:x2] = roi
+    except: pass
+    return image
+
 # --- [3. 핵심 함수: 투명 이미지 합성] ---
 def overlay_transparent(background, overlay, x, y):
     try:
@@ -181,8 +208,8 @@ RECORD_CODEC = "mp4v"
 RECORD_FPS_FALLBACK = 30
 
 # --- [7. 상태 관리] ---
-FILTER_ITEMS = ['glasses', 'hat', 'mustache', 'crown']
-FILTER_LABELS = ['안경', '모자', '수염', '왕관']
+FILTER_ITEMS = ['glasses', 'hat', 'mustache', 'crown', 'big_eyes']
+FILTER_LABELS = ['안경', '모자', '수염', '왕관', '왕눈이']
 current_cursor_index = 0
 active_filters = ['glasses']
 background_mode = 0
@@ -310,6 +337,20 @@ def apply_filter(image, face_landmarks, filter_type, h, w):
         else: filter_img = create_crown_filter(target_width, int(target_width * height_ratio))
         center_x = fx - target_width // 2 + offset_x
         center_y = fy - filter_img.shape[0] + offset_y
+
+    elif filter_type == 'big_eyes':
+        le = face_landmarks.landmark[468] # 왼쪽 홍채
+        re = face_landmarks.landmark[473] # 오른쪽 홍채
+        lx, ly = int(le.x * w), int(le.y * h)
+        rx, ry = int(re.x * w), int(re.y * h)
+        
+        eye_dist = np.sqrt((lx-rx)**2 + (ly-ry)**2)
+        radius = int(eye_dist * 0.45 * SIZE_SCALE)
+        strength = 0.6 * ALPHA_SCALE
+        
+        image = distort_region(image, lx, ly, radius, strength)
+        image = distort_region(image, rx, ry, radius, strength)
+        return image
 
     if filter_img is not None:
         M = cv2.getRotationMatrix2D((filter_img.shape[1]//2, filter_img.shape[0]//2), -angle, 1)
