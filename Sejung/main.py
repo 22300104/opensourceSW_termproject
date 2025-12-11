@@ -118,6 +118,64 @@ def create_crown_filter(width, height):
     cv2.circle(img, (3*width//4, height//3), 4, (0, 0, 255, 255), -1)
     return img
 
+def create_joker_mask(width, height):
+    """조커 분장 마스크 생성 (입술, 눈 화장)"""
+    img = np.zeros((height, width, 4), dtype=np.uint8)
+    # 입술 (빨간색, 찢어진 입)
+    pts_mouth = np.array([
+        [width//2, height//2 + 20], [width//2 - 60, height//2], [width//2, height//2 - 10], [width//2 + 60, height//2]
+    ], np.int32)
+    cv2.fillPoly(img, [pts_mouth], (0, 0, 200, 200)) # BGR
+    # 눈 (파란색 다이아몬드)
+    cv2.fillPoly(img, [np.array([[width//3, height//3], [width//3-15, height//3+30], [width//3, height//3+60], [width//3+15, height//3+30]], np.int32)], (200, 0, 0, 200))
+    cv2.fillPoly(img, [np.array([[2*width//3, height//3], [2*width//3-15, height//3+30], [2*width//3, height//3+60], [2*width//3+15, height//3+30]], np.int32)], (200, 0, 0, 200))
+    return img
+
+def apply_face_paint(image, landmarks, h, w):
+    """얼굴 랜드마크 기반 페이스 페인팅"""
+    mask = np.zeros_like(image)
+    
+    # 1. 입술 (빨간색)
+    mouth_indices = [61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291, 308, 324, 318, 402, 317, 14, 87, 178, 88, 95, 185, 40, 39, 37, 0, 267, 269, 270, 409, 291]
+    mouth_points = []
+    for idx in mouth_indices:
+        pt = landmarks.landmark[idx]
+        mouth_points.append((int(pt.x * w), int(pt.y * h)))
+    
+    if mouth_points:
+        cv2.fillPoly(mask, [np.array(mouth_points)], (0, 0, 200)) # 빨간색
+        
+        # 입꼬리 (조커처럼 길게)
+        left_corner = mouth_points[0]
+        right_corner = mouth_points[10] # 대략적인 오른쪽 끝
+        cv2.line(mask, left_corner, (left_corner[0]-40, left_corner[1]-20), (0, 0, 200), 15)
+        cv2.line(mask, right_corner, (right_corner[0]+40, right_corner[1]-20), (0, 0, 200), 15)
+
+    # 2. 눈 주변 (검은색)
+    left_eye_indices = [33, 246, 161, 160, 159, 158, 157, 173, 133, 155, 154, 153, 145, 144, 163, 7]
+    right_eye_indices = [362, 398, 384, 385, 386, 387, 388, 466, 263, 249, 390, 373, 374, 380, 381, 382]
+    
+    for indices in [left_eye_indices, right_eye_indices]:
+        points = []
+        for idx in indices:
+            pt = landmarks.landmark[idx]
+            points.append((int(pt.x * w), int(pt.y * h)))
+        if points:
+            # 눈두덩이까지 넓게 칠하기 위해 convex hull 사용 가능하지만 여기선 다각형 확장
+            pts = np.array(points)
+            # 중심점
+            M = cv2.moments(pts)
+            if M['m00'] != 0:
+                cx, cy = int(M['m10']/M['m00']), int(M['m01']/M['m00'])
+                # 스케일 키워서 그림 (팬더/조커 느낌)
+                scaled_pts = []
+                for px, py in points:
+                    scaled_pts.append((int(cx + (px-cx)*2.5), int(cy + (py-cy)*2.5)))
+                cv2.fillPoly(mask, [np.array(scaled_pts)], (30, 30, 30))
+
+    # 합성 (Overlay)
+    return cv2.addWeighted(image, 1.0, mask, 0.6, 0)
+
 def distort_region(image, cx, cy, radius, strength=0.5):
     """영역 왜곡 (왕눈이 효과)"""
     try:
@@ -254,8 +312,8 @@ RECORD_CODEC = "mp4v"
 RECORD_FPS_FALLBACK = 30
 
 # --- [7. 상태 관리] ---
-FILTER_ITEMS = ['glasses', 'hat', 'mustache', 'crown', 'big_eyes']
-FILTER_LABELS = ['안경', '모자', '수염', '왕관', '왕눈이']
+FILTER_ITEMS = ['glasses', 'hat', 'mustache', 'crown', 'big_eyes', 'joker']
+FILTER_LABELS = ['안경', '모자', '수염', '왕관', '왕눈이', '조커']
 current_cursor_index = 0
 active_filters = ['glasses']
 background_mode = 0
@@ -397,6 +455,9 @@ def apply_filter(image, face_landmarks, filter_type, h, w):
         image = distort_region(image, lx, ly, radius, strength)
         image = distort_region(image, rx, ry, radius, strength)
         return image
+
+    elif filter_type == 'joker':
+        return apply_face_paint(image, face_landmarks, h, w)
 
     if filter_img is not None:
         M = cv2.getRotationMatrix2D((filter_img.shape[1]//2, filter_img.shape[0]//2), -angle, 1)
