@@ -45,36 +45,6 @@ The following packages are necessary for execution:
     pip install opencv-python mediapipe numpy pillow
     ```
 
-## Usage
-
-Navigate to the project directory and execute the main script.
-
-1.  Move to the source directory (e.g., Sejung's implementation):
-    ```bash
-    cd Sejung
-    ```
-
-2.  Run the application:
-    ```bash
-    python main.py
-    ```
-
-### Control Guide
-
-| Input Method | Action | Function |
-| :--- | :--- | :--- |
-| **Keyboard** | `A` / `D` | Navigate filter menu (Left/Right) |
-| | `Space` | Toggle selected filter |
-| | `Tab` | Change virtual background |
-| | `S` | Save screenshot |
-| | `R` | Start/Stop video recording |
-| | `+` / `-` | Adjust filter size |
-| | `[` / `]` | Adjust filter transparency |
-| **Gestures** | **V-Sign** | Take screenshot |
-| | **Palm** | Navigate menu |
-| | **Fist** | Select/Deselect item |
-| | **Index Point** | Change background |
-
 ## References
 *   [Google MediaPipe Solutions](https://developers.google.com/mediapipe/solutions) - Used for Face Mesh, Hands, and Selfie Segmentation.
 *   [OpenCV Documentation](https://docs.opencv.org/) - Used for image processing and computer vision tasks.
