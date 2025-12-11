@@ -6,6 +6,8 @@ import sys
 from PIL import Image, ImageDraw, ImageFont
 from datetime import datetime
 
+import random
+
 # --- [1. 설정 및 초기화] ---
 mp_face_mesh = mp.solutions.face_mesh
 face_mesh = mp_face_mesh.FaceMesh(
@@ -14,6 +16,50 @@ face_mesh = mp_face_mesh.FaceMesh(
     min_detection_confidence=0.5,
     min_tracking_confidence=0.5
 )
+
+class ParticleSystem:
+    def __init__(self):
+        self.particles = []
+        
+    def emit(self, x, y):
+        # 파티클 속성: [x, y, vx, vy, life, color, size]
+        for _ in range(5): # 한 번에 5개 생성
+            vx = random.uniform(-5, 5)
+            vy = random.uniform(-15, -5) # 위로 솟구침
+            life = random.randint(20, 40)
+            color = (random.randint(0, 255), random.randint(100, 255), 255) # 주황~노랑 불꽃색 (BGR)
+            size = random.randint(3, 8)
+            self.particles.append([x, y, vx, vy, life, color, size])
+            
+    def update_and_draw(self, img):
+        if not self.particles: return img
+        
+        h, w = img.shape[:2]
+        new_particles = []
+        
+        # 반투명 레이어 (잔상 효과)
+        overlay = img.copy()
+        
+        for p in self.particles:
+            x, y, vx, vy, life, color, size = p
+            
+            # 물리 업데이트
+            x += vx
+            y += vy
+            vy += 0.5 # 중력
+            life -= 1
+            
+            # 화면 밖 체크
+            if life > 0 and 0 <= x < w and 0 <= y < h:
+                # 그리기
+                alpha = min(1.0, life / 20.0)
+                cv2.circle(overlay, (int(x), int(y)), size, color, -1)
+                new_particles.append([x, y, vx, vy, life, color, size])
+                
+        self.particles = new_particles
+        return cv2.addWeighted(overlay, 0.7, img, 0.3, 0)
+
+particle_system = ParticleSystem()
 
 # [가상 배경] 세그멘테이션 초기화
 mp_selfie_segmentation = mp.solutions.selfie_segmentation
@@ -460,11 +506,21 @@ while cap.isOpened():
     if results_face.multi_face_landmarks:
         for face_landmarks in results_face.multi_face_landmarks:
             image = apply_filters(image, face_landmarks, active_filters, h, w)
-            # 입 벌림 효과
+            # 입 벌림 효과 (파티클)
             top_y = face_landmarks.landmark[13].y
             bot_y = face_landmarks.landmark[14].y
-            if int(abs(top_y - bot_y) * h) > 40:
-                cv2.putText(image, "Wow!", (50, 150), cv2.FONT_HERSHEY_SIMPLEX, 3, (0, 0, 255), 5)
+            mouth_open_dist = int(abs(top_y - bot_y) * h)
+            
+            if mouth_open_dist > 40:
+                lip_x = int(face_landmarks.landmark[13].x * w)
+                lip_y = int(face_landmarks.landmark[13].y * h)
+                particle_system.emit(lip_x, lip_y + 20) # 입 안쪽에서 생성
+                
+                # 기존 텍스트 효과는 유지하되 조금 작게
+                # cv2.putText(image, "Wow!", (50, 150), cv2.FONT_HERSHEY_SIMPLEX, 3, (0, 0, 255), 5)
+
+    # 파티클 업데이트 및 그리기 (얼굴 위에 그려지도록 여기서 호출)
+    image = particle_system.update_and_draw(image)
 
     # 제스처 처리
     if results_hands.multi_hand_landmarks:
